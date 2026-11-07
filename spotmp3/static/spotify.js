@@ -11,6 +11,7 @@ const SpotifyConnect = (() => {
   const EXPIRY_MARGIN_MS = 60 * 1000;
   const MAX_TEXT = 300;
   const MAX_ARTISTS = 20;
+  const UNREADABLE_PLAYLIST_STATUSES = new Set([403, 404]);
 
   function read(key) {
     try {
@@ -138,8 +139,16 @@ const SpotifyConnect = (() => {
       disconnect();
       throw new Error('Spotify signed you out. Connect Spotify again.');
     }
-    if (!response.ok) throw new Error(`Spotify answered ${response.status}: ${(body.error && body.error.message) || 'no details'}`);
+    if (!response.ok) {
+      const error = new Error(`Spotify answered ${response.status}: ${(body.error && body.error.message) || 'no details'}`);
+      error.status = response.status;
+      throw error;
+    }
     return body;
+  }
+
+  function isUnreadablePlaylist(error) {
+    return Boolean(error) && UNREADABLE_PLAYLIST_STATUSES.has(error.status);
   }
 
   async function pages(config, firstPath, limit) {
@@ -188,13 +197,13 @@ const SpotifyConnect = (() => {
   async function playlist(config, playlistId, limit) {
     const details = await get(config, `/playlists/${encodeURIComponent(playlistId)}?fields=name`);
     const { items, truncated } = await pages(config, `/playlists/${encodeURIComponent(playlistId)}/items?limit=100&additional_types=track`, limit);
-    return { kind: 'playlist', name: details.name || 'Playlist', truncated, tracks: entryTracks(items) };
+    return { kind: 'playlist', name: details.name || 'Playlist', truncated, fromSpotifyAccount: true, tracks: entryTracks(items) };
   }
 
   async function likedSongs(config, limit) {
     const { items, truncated } = await pages(config, '/me/tracks?limit=50', limit);
-    return { kind: 'playlist', name: 'Liked Songs', truncated, tracks: entryTracks(items) };
+    return { kind: 'playlist', name: 'Liked Songs', truncated, fromSpotifyAccount: true, tracks: entryTracks(items) };
   }
 
-  return { isConfigured, isConnected, start, finish, disconnect, myPlaylists, playlist, likedSongs };
+  return { isConfigured, isConnected, isUnreadablePlaylist, start, finish, disconnect, myPlaylists, playlist, likedSongs };
 })();

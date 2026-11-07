@@ -5,6 +5,9 @@ const BUSY_POLL_MS = 2500;
 const IDLE_POLL_MS = 15000;
 const CONFIRM_WINDOW_MS = 3000;
 const SPOTIFY_PLAYLIST_LINK = /^(?:https?:\/\/open\.spotify\.com\/(?:intl-[a-z-]+\/)?(?:embed\/)?playlist\/|spotify:playlist:)([A-Za-z0-9]{22})/i;
+const SPOTIFY_PLAYLIST_URL = 'https://open.spotify.com/playlist/';
+const STATUS_NOT_CONNECTED = 'Connect to pick from your own playlists and Liked Songs, and to get every track of playlists you own or collaborate on.';
+const STATUS_CONNECTED = 'Spotify is connected in this tab. Playlists you own or collaborate on now include every track.';
 const OPEN_STATUSES = ['queued', 'working'];
 const FINISHED_STATUSES = ['done', 'failed', 'cancelled', 'expired'];
 const STATUS_LABELS = { queued: 'Waiting', working: 'Converting', done: 'Ready', failed: 'Failed', cancelled: 'Cancelled', expired: 'Cleaned up' };
@@ -94,8 +97,11 @@ function showResult(collection) {
   state.selected = new Set(collection.tracks.map((_, index) => index));
   byId('result-name').textContent = collection.name;
   const notes = [];
-  if (collection.truncated && collection.kind === 'playlist' && !SpotifyConnect.isConnected()) {
-    notes.push('Spotify only shares the first 100 tracks of a playlist link. Connect Spotify below the link box to get every track.');
+  const isPublicPlaylistPage = collection.kind === 'playlist' && !collection.fromSpotifyAccount;
+  if (collection.truncated && isPublicPlaylistPage && SpotifyConnect.isConnected()) {
+    notes.push('Spotify only lets apps read every track of playlists you own or collaborate on, so this lists the first 100 from the public page.');
+  } else if (collection.truncated && isPublicPlaylistPage) {
+    notes.push('Spotify only shares the first 100 tracks of a playlist link. Connect Spotify below the link box to get every track of playlists you own or collaborate on.');
   } else if (collection.truncated) {
     notes.push(`Only the first ${collection.tracks.length} tracks are listed (the most one job can hold).`);
   }
@@ -142,6 +148,15 @@ function setAllSelected(selected) {
   renderTracks();
 }
 
+async function loadSpotifyPlaylist(playlistId) {
+  try {
+    return await SpotifyConnect.playlist(state.config, playlistId, state.config.maxTracks);
+  } catch (error) {
+    if (!SpotifyConnect.isUnreadablePlaylist(error)) throw error;
+    return post('/api/resolve', { link: SPOTIFY_PLAYLIST_URL + encodeURIComponent(playlistId) });
+  }
+}
+
 async function findTracks(event) {
   event.preventDefault();
   const link = byId('link').value.trim();
@@ -153,7 +168,7 @@ async function findTracks(event) {
   const spotifyPlaylist = link.match(SPOTIFY_PLAYLIST_LINK);
   try {
     const collection = spotifyPlaylist && SpotifyConnect.isConnected()
-      ? await SpotifyConnect.playlist(state.config, spotifyPlaylist[1], state.config.maxTracks)
+      ? await loadSpotifyPlaylist(spotifyPlaylist[1])
       : await post('/api/resolve', { link });
     if (!collection.tracks.length) throw new Error('No playable tracks were found at that link.');
     showResult(collection);
@@ -297,7 +312,7 @@ async function showPlaylists() {
     const limit = state.config.maxTracks;
     box.replaceChildren(
       playlistTile('Liked Songs', null, () => pickCollection(() => SpotifyConnect.likedSongs(state.config, limit))),
-      ...playlists.map(playlist => playlistTile(playlist.name, playlist.image, () => pickCollection(() => SpotifyConnect.playlist(state.config, playlist.id, limit)))),
+      ...playlists.map(playlist => playlistTile(playlist.name, playlist.image, () => pickCollection(() => loadSpotifyPlaylist(playlist.id)))),
     );
     box.hidden = false;
   } catch (error) {
@@ -316,8 +331,8 @@ function setupSpotify() {
   byId('spotify-playlists').hidden = !connected;
   byId('spotify-disconnect').hidden = !connected;
   byId('spotify-status').textContent = connected
-    ? 'Spotify is connected in this tab. Pasted playlist links now include every track.'
-    : 'Connect to pick from your own playlists and Liked Songs, and to get playlists longer than 100 tracks.';
+    ? STATUS_CONNECTED
+    : STATUS_NOT_CONNECTED;
   if (!connected) byId('playlists').hidden = true;
 }
 

@@ -38,8 +38,11 @@ fills up.
 | YouTube playlist | `https://www.youtube.com/playlist?list=...` |
 
 Spotify only shares the first 100 tracks of a playlist link with apps that
-are not signed in. Connect Spotify (below) to get every track, and to pick
-from your own playlists and Liked Songs.
+are not signed in. Connect Spotify (below) to pick from your own playlists
+and Liked Songs, and to get every track of playlists you own or collaborate
+on. Spotify does not let apps read the full track list of anyone else's
+playlist (including ones made by Spotify), so those still list their first
+100 tracks.
 
 ## How matching works
 
@@ -115,7 +118,11 @@ shows the exact redirect address to copy:
 3. Paste the app's **Client ID** into Settings and save. It works straight
    away, no restart needed.
 4. While the Spotify app is in Development Mode, add each person's Spotify
-   account under **User Management** in the dashboard.
+   account under **User Management** in the dashboard, yourself included
+   (up to 5 people).
+
+Spotify only runs Development Mode apps while the account that created the
+app has Spotify Premium.
 
 No client secret is needed: Spotify sign-in happens in the browser with
 PKCE, so there is no secret to store and the Spotify token never reaches
