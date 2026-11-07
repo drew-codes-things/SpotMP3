@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#0a0a0b" />
+  <meta name="robots" content="noindex" />
+  <title>Connecting Spotify · SpotMP3</title>
+  <link rel="icon" href="/static/icon.svg" type="image/svg+xml" />
+  <link rel="stylesheet" href="/static/app.css" />
+</head>
+<body class="centered">
+  <main class="card auth-card">
+    <img class="icon" src="/static/icon.svg" alt="" width="56" height="56" />
+    <h1><span class="accent">Spot</span>MP3</h1>
+    <p class="sub" id="message">Connecting your Spotify account...</p>
+    <p class="error" id="error" role="alert" hidden></p>
+    <a class="button quiet" id="back" href="/" hidden>Back to SpotMP3</a>
+  </main>
+  <script src="/static/spotify.js"></script>
+  <script src="/static/callback.js"></script>
+</body>
+</html>

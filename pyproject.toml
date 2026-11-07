@@ -1,0 +1,26 @@
+[project]
+name = "spotmp3"
+dynamic = ["version"]
+description = "Turn Spotify and YouTube links into tagged MP3 files"
+requires-python = ">=3.11"
+license = "MIT"
+dependencies = ["flask==3.1.3", "waitress==3.0.2", "yt-dlp>=2026.10.21"]
+
+[project.optional-dependencies]
+dev = ["pytest==9.1.1"]
+
+[project.scripts]
+spotmp3 = "spotmp3.cli:main"
+
+[tool.setuptools.dynamic]
+version = { attr = "spotmp3.__version__" }
+
+[tool.setuptools.packages.find]
+include = ["spotmp3*"]
+
+[tool.setuptools.package-data]
+spotmp3 = ["static/*", "static/fonts/*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = [".", "tests"]

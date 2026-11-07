@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#0a0a0b" />
+  <meta name="robots" content="noindex" />
+  <title>SpotMP3</title>
+  <link rel="icon" href="/static/icon.svg" type="image/svg+xml" />
+  <link rel="stylesheet" href="/static/app.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <img src="/static/icon.svg" alt="" width="36" height="36" />
+      <h1><span class="accent">Spot</span>MP3</h1>
+    </div>
+    <span class="who" id="who"></span>
+    <button class="quiet small" id="accounts-toggle" type="button" hidden>Accounts</button>
+    <button class="quiet small" id="signout" type="button" hidden>Sign out</button>
+  </header>
+
+  <main class="app">
+    <section class="card" aria-labelledby="find-title">
+      <h2 id="find-title">Paste a link</h2>
+      <form class="link-row" id="find-form" novalidate>
+        <input id="link" type="url" inputmode="url" autocomplete="off" spellcheck="false"
+               placeholder="https://open.spotify.com/playlist/... or https://youtu.be/..." aria-label="Spotify or YouTube link" />
+        <button id="find" type="submit">Find tracks</button>
+      </form>
+      <p class="hint">Spotify tracks, albums and playlists, or YouTube videos and playlists. Both youtube.com/watch and youtu.be links work.</p>
+      <p class="error" id="find-error" role="alert" hidden></p>
+      <div class="options-row">
+        <div class="field">
+          <label for="quality">MP3 quality</label>
+          <select id="quality"></select>
+        </div>
+        <p class="hint" id="quality-note">YouTube's best audio is about 130 to 160 kbps, so 320 kbps gives the biggest, safest file rather than extra detail.</p>
+      </div>
+      <div class="spotify-row" id="spotify-row" hidden>
+        <button class="quiet" id="spotify-connect" type="button">Connect Spotify</button>
+        <button class="quiet" id="spotify-playlists" type="button" hidden>Your playlists</button>
+        <button class="quiet small" id="spotify-disconnect" type="button" hidden>Disconnect</button>
+        <span class="hint" id="spotify-status">Connect to pick from your own playlists and Liked Songs, and to get playlists longer than 100 tracks.</span>
+      </div>
+      <div class="playlists" id="playlists" hidden></div>
+    </section>
+
+    <section class="card" id="result" aria-labelledby="result-name" hidden>
+      <div class="result-head">
+        <h2 id="result-name"></h2>
+        <span class="hint" id="result-count"></span>
+        <button class="quiet small" id="select-all" type="button">Select all</button>
+        <button class="quiet small" id="select-none" type="button">Select none</button>
+        <button id="convert" type="button">Convert</button>
+      </div>
+      <p class="hint" id="result-note" hidden></p>
+      <p class="error" id="convert-error" role="alert" hidden></p>
+      <ul class="tracks" id="tracks"></ul>
+    </section>
+
+    <section class="card" aria-labelledby="jobs-title">
+      <h2 id="jobs-title">Your conversions</h2>
+      <p class="hint" id="retention"></p>
+      <div class="jobs" id="jobs"><p class="empty">Nothing yet. Paste a link above to start.</p></div>
+    </section>
+
+    <section class="card" id="accounts-card" aria-labelledby="accounts-title" hidden>
+      <h2 id="accounts-title">Accounts</h2>
+      <ul class="accounts" id="accounts"></ul>
+      <form class="account-form" id="account-form" novalidate>
+        <div>
+          <label for="new-email">Email</label>
+          <input id="new-email" type="email" autocomplete="off" required />
+        </div>
+        <div>
+          <label for="new-password">Password (10+ characters)</label>
+          <input id="new-password" type="password" autocomplete="new-password" required />
+        </div>
+        <div>
+          <label for="new-confirm">Password again</label>
+          <input id="new-confirm" type="password" autocomplete="new-password" required />
+        </div>
+        <label class="check"><input id="new-admin" type="checkbox" /> Admin</label>
+        <button type="submit">Add account</button>
+      </form>
+      <p class="error" id="account-error" role="alert" hidden></p>
+    </section>
+  </main>
+
+  <script src="/static/spotify.js"></script>
+  <script src="/static/app.js"></script>
+</body>
+</html>
