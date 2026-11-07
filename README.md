@@ -96,24 +96,31 @@ or remove accounts for other people from the **Accounts** button.
 | `DATA_DIR` | Database, finished files and temporary work. Default `./data`. |
 | `PUBLIC_URL` | The address people use, e.g. `https://mp3.example.com`. Needed for Spotify connect. |
 | `SECURE_COOKIES` | Set `true` when served over HTTPS. |
-| `SPOTIFY_CLIENT_ID` | Optional, turns on Connect Spotify (see below). |
+| `SPOTIFY_CLIENT_ID` | Optional, turns on Connect Spotify (see below). Easier to set on the site's Settings page. |
 | `RETENTION_HOURS` | How long finished files are kept. Default `24`. |
 | `STORAGE_LIMIT_MB` | Oldest files are cleaned up past this. Default `2048`. |
 | `MIN_FREE_MB` | Conversions pause when the disk has less free space than this. Default `500`. |
 | `MAX_TRACKS_PER_JOB` / `MAX_OPEN_JOBS_PER_USER` | Limits per conversion and per person. Defaults `500` and `5`. |
+| `YTDLP_AUTO_UPDATE` | `true` (default) updates yt-dlp every time SpotMP3 starts. See "Keeping YouTube working". |
 | `AUTH_MODE` | `builtin` (accounts in SpotMP3, the default) or `starfire` to trust an existing [starfire.ai](https://github.com/drew-codes-things/starfire.ai) sign-in via `STARFIRE_ME_URL`. |
 
 ## Connect Spotify (optional)
 
-1. Create an app at the [Spotify developer dashboard](https://developer.spotify.com/dashboard).
-2. Add the redirect URI `<PUBLIC_URL>/spotify/callback`, for example
+Sign in as an admin and press **Settings**. The page walks through it and
+shows the exact redirect address to copy:
+
+1. Create an app at the [Spotify developer dashboard](https://developer.spotify.com/dashboard) and tick **Web API**.
+2. Add the redirect URI shown on the Settings page, for example
    `https://mp3.example.com/spotify/callback`.
-3. Put the app's Client ID in `SPOTIFY_CLIENT_ID` and restart.
+3. Paste the app's **Client ID** into Settings and save. It works straight
+   away, no restart needed.
 4. While the Spotify app is in Development Mode, add each person's Spotify
    account under **User Management** in the dashboard.
 
-Spotify sign-in happens in the browser with PKCE: no client secret is stored
-and the Spotify token never reaches the server.
+No client secret is needed: Spotify sign-in happens in the browser with
+PKCE, so there is no secret to store and the Spotify token never reaches
+the server. `SPOTIFY_CLIENT_ID` and `PUBLIC_URL` in `.env` still work and
+are used when the Settings boxes are empty.
 
 ## Command line
 
@@ -127,8 +134,23 @@ web app.
 
 ## Keeping YouTube working
 
-YouTube changes every few weeks and old copies of yt-dlp start failing. Update
-it regularly (a weekly timer works well) and restart SpotMP3:
+YouTube changes every few weeks, and an old copy of yt-dlp then fails with
+`HTTP Error 403: Forbidden` or "no close enough match". Installing from
+GitHub only gets the yt-dlp that was newest on the day you installed, so
+SpotMP3 keeps it fresh itself:
+
+- Every time SpotMP3 starts it runs `pip install -U "yt-dlp[default]"` and,
+  if a newer version arrived, restarts itself to load it. Turn this off with
+  `YTDLP_AUTO_UPDATE=false`.
+- A copy that stays running for weeks keeps the version it started with, so
+  restart it now and then. As a systemd service, `RuntimeMaxSec=1d` with
+  `Restart=always` restarts it daily; anything half converted is picked up
+  again after the restart.
+- If the app's Python environment is read-only for the service user, run
+  the update as part of starting instead, for example
+  `ExecStartPre=+/path/to/.venv/bin/pip install -q -U "yt-dlp[default]"`.
+
+To update by hand:
 
 ```bash
 pip install -U "yt-dlp[default]"

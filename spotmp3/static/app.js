@@ -309,6 +309,7 @@ async function showPlaylists() {
 function setupSpotify() {
   const configured = SpotifyConnect.isConfigured(state.config);
   byId('spotify-row').hidden = !configured;
+  byId('spotify-setup-hint').hidden = configured || !state.config.canManageSettings;
   if (!configured) return;
   const connected = SpotifyConnect.isConnected();
   byId('spotify-connect').hidden = connected;
@@ -363,6 +364,71 @@ function setupAccounts() {
   byId('account-form').addEventListener('submit', addAccount);
 }
 
+function showSiteSettings(values) {
+  byId('redirect-uri').textContent = values.redirectUri;
+  byId('spotify-client-id').value = values.spotifyClientId;
+  byId('public-url').value = values.publicUrl;
+  const defaults = [];
+  if (values.spotifyClientIdFromServer) defaults.push(`Client ID from the server's settings file: ${values.spotifyClientIdFromServer}`);
+  if (values.publicUrlFromServer) defaults.push(`Public address from the server's settings file: ${values.publicUrlFromServer}`);
+  byId('settings-defaults').textContent = defaults.length
+    ? `${defaults.join('. ')}. Leave a box empty to use that value.`
+    : 'Leave the public address empty to use the address this page was opened on.';
+}
+
+async function loadSiteSettings() {
+  showSiteSettings(await api('/api/settings'));
+}
+
+async function saveSiteSettings(event) {
+  event.preventDefault();
+  showMessage(byId('settings-error'), '');
+  showMessage(byId('settings-saved'), '');
+  try {
+    const saved = await api('/api/settings', {
+      method: 'PUT',
+      body: JSON.stringify({ spotifyClientId: byId('spotify-client-id').value.trim(), publicUrl: byId('public-url').value.trim() }),
+    });
+    showSiteSettings(saved);
+    state.config = await api('/api/config');
+    setupSpotify();
+    showMessage(byId('settings-saved'), 'Saved.');
+  } catch (error) {
+    showMessage(byId('settings-error'), error.message);
+  }
+}
+
+async function copyRedirectUri() {
+  const text = byId('redirect-uri').textContent;
+  try {
+    await navigator.clipboard.writeText(text);
+    byId('copy-redirect').textContent = 'Copied';
+  } catch {
+    const range = document.createRange();
+    range.selectNodeContents(byId('redirect-uri'));
+    window.getSelection().removeAllRanges();
+    window.getSelection().addRange(range);
+    byId('copy-redirect').textContent = 'Selected, press Ctrl+C';
+  }
+  window.setTimeout(() => { byId('copy-redirect').textContent = 'Copy'; }, CONFIRM_WINDOW_MS);
+}
+
+function setupSiteSettings() {
+  if (!state.config.canManageSettings) return;
+  const toggle = byId('settings-toggle');
+  toggle.hidden = false;
+  toggle.addEventListener('click', async () => {
+    const card = byId('settings-card');
+    card.hidden = !card.hidden;
+    if (!card.hidden) {
+      await loadSiteSettings().catch(error => showMessage(byId('settings-error'), error.message));
+      card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  });
+  byId('settings-form').addEventListener('submit', withBusy(byId('settings-save'), saveSiteSettings));
+  byId('copy-redirect').addEventListener('click', copyRedirectUri);
+}
+
 function setupQuality() {
   const select = byId('quality');
   select.replaceChildren(...state.config.qualities.map(quality => el('option', { value: quality.key, text: quality.label })));
@@ -381,6 +447,7 @@ async function start() {
   });
   setupQuality();
   setupAccounts();
+  setupSiteSettings();
   setupSpotify();
   byId('find-form').addEventListener('submit', withBusy(byId('find'), findTracks));
   byId('select-all').addEventListener('click', () => setAllSelected(true));

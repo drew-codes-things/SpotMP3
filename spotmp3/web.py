@@ -10,6 +10,7 @@ from .audio import DEFAULT_QUALITY, UNSAFE_FILE_CHARACTERS, quality_choices
 from .auth import SESSION_COOKIE, SESSION_SECONDS, AuthError, BuiltinAuth
 from .config import Settings
 from .jobs import JobError, JobStore
+from .site_settings import SiteSettings, SiteSettingsError
 from .sources import SourceError, resolve_any
 from .tracks import Collection
 from .worker import Worker
@@ -52,7 +53,7 @@ def _body() -> dict:
     return data
 
 
-def create_app(settings: Settings, auth, jobs: JobStore, worker: Worker, youtube: YouTube, resolver=resolve_any) -> Flask:
+def create_app(settings: Settings, auth, jobs: JobStore, worker: Worker, youtube: YouTube, site_settings: SiteSettings, resolver=resolve_any) -> Flask:
     app = Flask(__name__, static_folder=None)
     app.config["MAX_CONTENT_LENGTH"] = MAX_REQUEST_BYTES
     is_builtin = isinstance(auth, BuiltinAuth)
@@ -77,9 +78,17 @@ def create_app(settings: Settings, auth, jobs: JobStore, worker: Worker, youtube
             user = current_user()
             if user is None:
                 return _error("sign in first", 401)
-            if not is_builtin or not user.is_admin:
-                return _error("only an admin can manage accounts here", 403)
+            if not user.is_admin:
+                return _error("only an admin can change this", 403)
             return view(*args, **kwargs)
+        return wrapper
+
+    def accounts_admin_only(view):
+        @wraps(view)
+        def wrapper(*args, **kwargs):
+            if not is_builtin:
+                return _error("accounts are managed by the main sign-in service here", 403)
+            return admin_only(view)(*args, **kwargs)
         return wrapper
 
     def set_session(response: Response, token: str) -> Response:
@@ -110,6 +119,10 @@ def create_app(settings: Settings, auth, jobs: JobStore, worker: Worker, youtube
     @app.errorhandler(JobError)
     def job_failed(error: JobError):
         return _error(str(error), error.status)
+
+    @app.errorhandler(SiteSettingsError)
+    def settings_rejected(error: SiteSettingsError):
+        return _error(str(error), 400)
 
     @app.errorhandler(413)
     def too_large(_error_value):
@@ -185,27 +198,40 @@ def create_app(settings: Settings, auth, jobs: JobStore, worker: Worker, youtube
             "mode": auth.mode,
             "canSignOut": is_builtin,
             "canManageAccounts": is_builtin and current_user().is_admin,
+            "canManageSettings": current_user().is_admin,
             "qualities": [{"key": key, "label": label} for key, label in quality_choices()],
             "defaultQuality": DEFAULT_QUALITY,
             "maxTracks": settings.max_tracks_per_job,
             "retentionHours": settings.retention_hours,
-            "spotifyClientId": settings.spotify_client_id,
-            "spotifyRedirectUri": settings.spotify_redirect_uri,
+            "spotifyClientId": site_settings.spotify_client_id(),
+            "spotifyRedirectUri": site_settings.redirect_uri(request.url_root),
         })
 
-    @app.get("/api/accounts")
+    @app.get("/api/settings")
     @admin_only
+    def read_site_settings():
+        return jsonify(site_settings.to_json(request.url_root))
+
+    @app.put("/api/settings")
+    @admin_only
+    def save_site_settings():
+        data = _body()
+        site_settings.update(data.get("spotifyClientId"), data.get("publicUrl"))
+        return jsonify(site_settings.to_json(request.url_root))
+
+    @app.get("/api/accounts")
+    @accounts_admin_only
     def list_accounts():
         return jsonify({"accounts": auth.list_accounts()})
 
     @app.post("/api/accounts")
-    @admin_only
+    @accounts_admin_only
     def add_account():
         data = _body()
         return jsonify(auth.add_account(data.get("email"), data.get("password"), data.get("confirm"), data.get("isAdmin") is True)), 201
 
     @app.delete("/api/accounts/<int:account_id>")
-    @admin_only
+    @accounts_admin_only
     def delete_account(account_id: int):
         owner = auth.delete_account(account_id, current_user())
         jobs.delete_owner(owner)

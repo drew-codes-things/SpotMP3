@@ -16,6 +16,7 @@
       <h1><span class="accent">Spot</span>MP3</h1>
     </div>
     <span class="who" id="who"></span>
+    <button class="quiet small" id="settings-toggle" type="button" hidden>Settings</button>
     <button class="quiet small" id="accounts-toggle" type="button" hidden>Accounts</button>
     <button class="quiet small" id="signout" type="button" hidden>Sign out</button>
   </header>
@@ -43,6 +44,7 @@
         <button class="quiet small" id="spotify-disconnect" type="button" hidden>Disconnect</button>
         <span class="hint" id="spotify-status">Connect to pick from your own playlists and Liked Songs, and to get playlists longer than 100 tracks.</span>
       </div>
+      <p class="hint spotify-setup-hint" id="spotify-setup-hint" hidden>Connect Spotify is not set up yet. Open <strong>Settings</strong> to add it.</p>
       <div class="playlists" id="playlists" hidden></div>
     </section>
 
@@ -63,6 +65,38 @@
       <h2 id="jobs-title">Your conversions</h2>
       <p class="hint" id="retention"></p>
       <div class="jobs" id="jobs"><p class="empty">Nothing yet. Paste a link above to start.</p></div>
+    </section>
+
+    <section class="card" id="settings-card" aria-labelledby="settings-title" hidden>
+      <h2 id="settings-title">Settings</h2>
+      <h3 class="subhead">Connect Spotify</h3>
+      <p class="hint">Lets people pick from their own Spotify playlists and Liked Songs, and get playlists longer than 100 tracks. Pasting links works without this.</p>
+      <ol class="steps">
+        <li>Open the <a href="https://developer.spotify.com/dashboard" target="_blank" rel="noopener noreferrer">Spotify developer dashboard</a>, sign in and press <strong>Create app</strong>. Any name and description will do. Tick <strong>Web API</strong>.</li>
+        <li>Under <strong>Redirect URIs</strong>, add this address exactly, then save:
+          <div class="copy-row">
+            <code id="redirect-uri"></code>
+            <button class="quiet small" id="copy-redirect" type="button">Copy</button>
+          </div>
+        </li>
+        <li>Open the app's <strong>Settings</strong> in the dashboard, copy the <strong>Client ID</strong> and paste it below.</li>
+        <li>While the Spotify app is in Development Mode, add the Spotify email of everyone who will use it under <strong>User Management</strong>.</li>
+      </ol>
+      <p class="hint">No client secret is needed. SpotMP3 signs in to Spotify with PKCE in the browser, so there is no secret to store or leak.</p>
+      <form class="settings-form" id="settings-form" novalidate>
+        <div>
+          <label for="spotify-client-id">Spotify Client ID</label>
+          <input id="spotify-client-id" type="text" autocomplete="off" spellcheck="false" placeholder="32 letters and numbers" />
+        </div>
+        <div>
+          <label for="public-url">Public address of this site</label>
+          <input id="public-url" type="url" autocomplete="off" spellcheck="false" placeholder="https://mp3.example.com" />
+        </div>
+        <button type="submit" id="settings-save">Save settings</button>
+      </form>
+      <p class="hint" id="settings-defaults"></p>
+      <p class="hint" id="settings-saved" role="status" hidden></p>
+      <p class="error" id="settings-error" role="alert" hidden></p>
     </section>
 
     <section class="card" id="accounts-card" aria-labelledby="accounts-title" hidden>

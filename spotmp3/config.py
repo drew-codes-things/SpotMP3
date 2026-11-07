@@ -45,6 +45,7 @@ class Settings:
     min_free_mb: int = 500
     max_tracks_per_job: int = 500
     max_open_jobs_per_user: int = 5
+    ytdlp_auto_update: bool = True
 
     @property
     def files_dir(self) -> Path:
@@ -57,10 +58,6 @@ class Settings:
     @property
     def database_path(self) -> Path:
         return self.data_dir / "spotmp3.db"
-
-    @property
-    def spotify_redirect_uri(self) -> str:
-        return f"{self.public_url.rstrip('/')}/spotify/callback" if self.public_url else ""
 
 
 def read_env_file(path: Path = ENV_FILE) -> None:
@@ -96,4 +93,10 @@ def load_settings() -> Settings:
         min_free_mb=_number("MIN_FREE_MB", 500, 50),
         max_tracks_per_job=_number("MAX_TRACKS_PER_JOB", 500, 1),
         max_open_jobs_per_user=_number("MAX_OPEN_JOBS_PER_USER", 5, 1),
+        ytdlp_auto_update=ytdlp_auto_update_enabled(),
     )
+
+
+def ytdlp_auto_update_enabled() -> bool:
+    read_env_file()
+    return _flag("YTDLP_AUTO_UPDATE", True)

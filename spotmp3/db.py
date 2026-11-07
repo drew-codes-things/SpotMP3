@@ -49,6 +49,10 @@ CREATE TABLE IF NOT EXISTS items (
 );
 CREATE INDEX IF NOT EXISTS items_job ON items(job_id);
 CREATE INDEX IF NOT EXISTS items_status ON items(status);
+CREATE TABLE IF NOT EXISTS app_settings (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
 """
 
 ITEM_STATUSES = ("queued", "working", "done", "failed", "cancelled", "expired")

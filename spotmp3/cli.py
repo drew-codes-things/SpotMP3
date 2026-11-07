@@ -8,13 +8,15 @@ from pathlib import Path
 from . import __version__
 from .audio import DEFAULT_QUALITY, QUALITIES, safe_file_name, unique_path
 from .auth import BuiltinAuth, StarfireAuth
-from .config import ConfigError, Settings, load_settings
+from .config import ConfigError, Settings, load_settings, ytdlp_auto_update_enabled
 from .db import Database
 from .jobs import JobStore
 from .pipeline import ConversionError, Pipeline
+from .site_settings import SiteSettings
 from .sources import SourceError, resolve_any
 from .worker import EXPECTED_FAILURES, Worker
 from .youtube import YouTube
+from .ytdlp_update import update_and_restart_if_needed
 
 SERVER_THREADS = 8
 CLI_TRACK_LIMIT = 500
@@ -46,7 +48,7 @@ def serve() -> None:
     youtube = YouTube()
     worker = Worker(settings, database, Pipeline(youtube))
     worker.start()
-    app = create_app(settings, build_auth(settings, database), JobStore(database, settings), worker, youtube)
+    app = create_app(settings, build_auth(settings, database), JobStore(database, settings), worker, youtube, SiteSettings(database, settings))
     log.info("SpotMP3 %s listening on http://%s:%s (%s accounts)", __version__, settings.bind_host, settings.port, settings.auth_mode)
     try:
         waitress_serve(app, host=settings.bind_host, port=settings.port, threads=SERVER_THREADS, ident="SpotMP3")
@@ -102,6 +104,7 @@ def main(argv: list[str] | None = None) -> int:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     args = parse_args(sys.argv[1:] if argv is None else argv)
     try:
+        update_and_restart_if_needed(ytdlp_auto_update_enabled())
         if args.command == "show":
             show(args.link)
             return 0

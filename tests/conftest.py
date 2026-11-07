@@ -9,6 +9,7 @@ from spotmp3.config import Settings
 from spotmp3.db import Database
 from spotmp3.jobs import JobStore
 from spotmp3.pipeline import Pipeline
+from spotmp3.site_settings import SiteSettings
 from spotmp3.tracks import Collection, Track
 from spotmp3.web import create_app
 from spotmp3.worker import Worker
@@ -86,8 +87,8 @@ def jobs(database, settings) -> JobStore:
 
 
 @pytest.fixture
-def app(settings, auth, jobs, worker, fake_youtube):
-    application = create_app(settings, auth, jobs, worker, fake_youtube, resolver=fake_resolver)
+def app(settings, auth, jobs, worker, fake_youtube, database):
+    application = create_app(settings, auth, jobs, worker, fake_youtube, SiteSettings(database, settings), resolver=fake_resolver)
     application.testing = True
     return application
 

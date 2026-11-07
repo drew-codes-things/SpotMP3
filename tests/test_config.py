@@ -23,7 +23,8 @@ def test_env_file_fills_settings_without_overriding_real_variables(monkeypatch, 
     settings = load_settings()
     assert settings.port == 9000
     assert settings.retention_hours == 48
-    assert settings.spotify_redirect_uri == "https://spotmp3.example.com/spotify/callback"
+    assert settings.public_url == "https://spotmp3.example.com/"
+    assert settings.ytdlp_auto_update is True
 
 
 def test_bad_values_are_reported(tmp_path):
