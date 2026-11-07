@@ -56,6 +56,16 @@ def safe_file_name(artist: str, title: str) -> str:
     return f"{stem[:MAX_FILE_NAME_LENGTH].rstrip(' .')}.mp3"
 
 
+def unique_path(folder: Path, file_name: str) -> Path:
+    candidate = folder / file_name
+    stem, suffix = candidate.stem, candidate.suffix
+    copy_number = 2
+    while candidate.exists():
+        candidate = folder / f"{stem} ({copy_number}){suffix}"
+        copy_number += 1
+    return candidate
+
+
 def metadata_arguments(tags: Tags) -> list[str]:
     values = {"title": tags.title, "artist": tags.artist, "album": tags.album, "track": tags.track_number, "comment": tags.source_note}
     arguments = []

@@ -5,7 +5,7 @@ import threading
 from pathlib import Path
 from typing import Callable
 
-from .audio import AudioError, safe_file_name
+from .audio import AudioError, safe_file_name, unique_path
 from .config import Settings
 from .db import Database, now
 from .pipeline import ConversionError, Pipeline
@@ -109,13 +109,7 @@ class Worker:
     def _destination(self, job_id: int, file_name: str) -> Path:
         folder = self.settings.files_dir / str(job_id)
         folder.mkdir(parents=True, exist_ok=True)
-        candidate = folder / file_name
-        stem, suffix = candidate.stem, candidate.suffix
-        copy_number = 2
-        while candidate.exists():
-            candidate = folder / f"{stem} ({copy_number}){suffix}"
-            copy_number += 1
-        return candidate
+        return unique_path(folder, file_name)
 
     def process(self, item) -> None:
         item_id, job_id = item["id"], item["job_id"]

@@ -63,3 +63,14 @@ def test_broken_source_reports_ffmpeg_error(tmp_path):
     source.write_bytes(b"not audio")
     with pytest.raises(AudioError, match="ffmpeg could not make the MP3"):
         encode_mp3(source, tmp_path / "out.mp3", "128", Tags("T", "A"), None)
+
+
+def test_unique_path_numbers_repeated_names(tmp_path):
+    from spotmp3.audio import unique_path
+
+    first = unique_path(tmp_path, "Artist - Song.mp3")
+    first.write_bytes(b"x")
+    second = unique_path(tmp_path, "Artist - Song.mp3")
+    second.write_bytes(b"x")
+    assert (first.name, second.name, unique_path(tmp_path, "Artist - Song.mp3").name) == (
+        "Artist - Song.mp3", "Artist - Song (2).mp3", "Artist - Song (3).mp3")

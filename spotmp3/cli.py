@@ -6,7 +6,7 @@ import tempfile
 from pathlib import Path
 
 from . import __version__
-from .audio import DEFAULT_QUALITY, QUALITIES, safe_file_name
+from .audio import DEFAULT_QUALITY, QUALITIES, safe_file_name, unique_path
 from .auth import BuiltinAuth, StarfireAuth
 from .config import ConfigError, Settings, load_settings
 from .db import Database
@@ -78,7 +78,7 @@ def convert(link: str, quality: str, output: Path) -> int:
                 failures += 1
                 print(f"{label}: failed, {error}", file=sys.stderr)
                 continue
-            destination = output / safe_file_name(track.artist_line, track.title)
+            destination = unique_path(output, safe_file_name(track.artist_line, track.title))
             shutil.move(converted.mp3_path, destination)
         print(f"{label}: {destination} (from {converted.match.url})")
     return 1 if failures else 0
