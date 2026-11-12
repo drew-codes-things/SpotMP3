@@ -74,3 +74,16 @@ def test_unique_path_numbers_repeated_names(tmp_path):
     second.write_bytes(b"x")
     assert (first.name, second.name, unique_path(tmp_path, "Artist - Song.mp3").name) == (
         "Artist - Song.mp3", "Artist - Song (2).mp3", "Artist - Song (3).mp3")
+
+
+def test_long_names_in_other_alphabets_fit_the_file_system(tmp_path):
+    artist = "Пётр Ильич Чайковский, Берлинский филармонический оркестр"
+    title = "Щелкунчик, соч. 71, действие II: Вариация II (Танец феи Драже) " * 3
+    name = safe_file_name(artist, title)
+    numbered_copy = name.replace(".mp3", " (12).mp3")
+    assert len(numbered_copy.encode()) <= 255
+    assert name.endswith(".mp3") and name.startswith("Пётр")
+    (tmp_path / numbered_copy).write_bytes(b"mp3")
+    wide_name = safe_file_name("日本" * 200, "曲")
+    assert wide_name.endswith("日.mp3") or wide_name.endswith("本.mp3")
+    assert len(wide_name.encode()) <= 255 - len(" (12)")

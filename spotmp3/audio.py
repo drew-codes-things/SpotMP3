@@ -18,6 +18,7 @@ ENCODE_TIMEOUT_SECONDS = 30 * 60
 COVER_TIMEOUT_SECONDS = 15
 MAX_COVER_BYTES = 5 * 1024 * 1024
 MAX_FILE_NAME_LENGTH = 150
+MAX_FILE_STEM_BYTES = 200
 UNSAFE_FILE_CHARACTERS = re.compile(r'[\x00-\x1f<>:"/\\|?*]')
 COVER_SCALE = "scale=min(640\\,iw):-2"
 VIDEO_FRAME_SQUARE_CROP = "crop=iw:min(ih\\,iw*9/16),crop=min(iw\\,ih):min(iw\\,ih),"
@@ -50,10 +51,15 @@ def encoder_arguments(quality: str) -> list[str]:
     return QUALITIES[quality][1]
 
 
+def _cut_to_bytes(text: str, limit: int) -> str:
+    return text.encode()[:limit].decode(errors="ignore")
+
+
 def safe_file_name(artist: str, title: str) -> str:
     stem = UNSAFE_FILE_CHARACTERS.sub("", f"{artist} - {title}")
     stem = " ".join(stem.split()).strip(" .") or "track"
-    return f"{stem[:MAX_FILE_NAME_LENGTH].rstrip(' .')}.mp3"
+    stem = _cut_to_bytes(stem[:MAX_FILE_NAME_LENGTH], MAX_FILE_STEM_BYTES)
+    return f"{stem.rstrip(' .')}.mp3"
 
 
 def unique_path(folder: Path, file_name: str) -> Path:
