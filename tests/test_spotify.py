@@ -72,3 +72,8 @@ def test_resolve_link_fetches_the_embed_page():
 def test_missing_data_is_reported():
     with pytest.raises(SpotifyLinkError):
         parse_embed("<html></html>", "track")
+
+
+def test_a_track_whose_artist_line_is_only_commas_keeps_an_artist():
+    page = embed_page({"name": "Odd List", "trackList": [{"title": "Nameless", "subtitle": " , ", "duration": 1000}]})
+    assert parse_embed(page, "playlist").tracks[0].artists == ("Unknown artist",)

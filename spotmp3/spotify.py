@@ -85,7 +85,8 @@ def _id_from_uri(uri) -> str | None:
 def _split_artists(subtitle) -> tuple[str, ...]:
     if not isinstance(subtitle, str) or not subtitle.strip():
         return ("Unknown artist",)
-    return tuple(part.strip() for part in subtitle.replace(" ", " ").split(",") if part.strip())
+    names = tuple(part.strip() for part in subtitle.replace(" ", " ").split(",") if part.strip())
+    return names or ("Unknown artist",)
 
 
 def _single_track(entity: dict) -> Collection:
