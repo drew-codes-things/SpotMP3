@@ -167,9 +167,10 @@ class Worker:
                 self._expire(connection, row["id"], row["file_path"])
                 total -= row["file_bytes"] or 0
             finished_jobs = connection.execute(
-                "SELECT id FROM jobs WHERE (deleted = 1 OR created_at < ?) AND NOT EXISTS (SELECT 1 FROM items WHERE items.job_id = jobs.id "
+                "SELECT id FROM jobs WHERE (deleted = 1 OR (created_at < ? AND NOT EXISTS (SELECT 1 FROM items WHERE items.job_id = jobs.id "
+                "AND items.finished_at >= ?))) AND NOT EXISTS (SELECT 1 FROM items WHERE items.job_id = jobs.id "
                 "AND (items.status = 'working' OR (items.status = 'queued' AND jobs.deleted = 0 AND jobs.cancelled = 0)))",
-                (cutoff,),
+                (cutoff, cutoff),
             ).fetchall()
             for row in finished_jobs:
                 self._remove_job(connection, row["id"])

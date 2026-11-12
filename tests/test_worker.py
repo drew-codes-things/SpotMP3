@@ -125,3 +125,15 @@ def test_stored_track_json_is_validated_again(jobs, worker, database):
         connection.execute("UPDATE items SET track_json = ?", (json.dumps({"title": ""}),))
     worker.process_next()
     assert item_rows(database)[0]["status"] == "failed"
+
+
+def test_cleanup_keeps_an_old_job_whose_track_only_just_finished(jobs, worker, database, settings):
+    job_id = jobs.create(OWNER, "x", "128", [sample_track()])
+    long_ago = now() - 3 * 24 * 3600
+    with database.connect() as connection:
+        connection.execute("UPDATE jobs SET created_at = ?", (long_ago,))
+    worker.process_next()
+    worker.cleanup()
+    assert [row["status"] for row in item_rows(database)] == ["done"]
+    assert len(list((settings.files_dir / str(job_id)).iterdir())) == 1
+    assert jobs.detail(OWNER, job_id)["counts"] == {"done": 1}
