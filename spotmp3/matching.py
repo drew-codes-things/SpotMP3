@@ -73,8 +73,8 @@ def title_similarity(track: Track, candidate: Candidate) -> float:
     offered = normalise(candidate.title)
     if wanted and contains_phrase(offered, wanted):
         return 1.0
-    for artist in track.artists:
-        offered = offered.replace(normalise(artist), " ")
+    for artist_name in filter(None, map(normalise, track.artists)):
+        offered = offered.replace(artist_name, " ")
     return similarity(wanted, core_title(offered))
 
 

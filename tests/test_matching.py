@@ -38,3 +38,11 @@ def test_duration_tolerance():
 def test_music_search_result_check():
     assert music_result_plausible(TRACK, candidate("Get Lucky", None))
     assert not music_result_plausible(TRACK, candidate("Get Lucky (Karaoke Version)", None))
+
+
+def test_an_artist_name_made_only_of_symbols_does_not_break_title_matching():
+    track = Track(title="Even When the Water's Cold", artists=("!!!",), duration_ms=228000)
+    video = candidate("!!! - Even When The Waters Cold", 233, channel="Warp Records")
+    same_song_by_a_named_artist = Track(title=track.title, artists=("Chk Chk Chk",), duration_ms=track.duration_ms)
+    assert choose_best(same_song_by_a_named_artist, [video]) is video
+    assert choose_best(track, [video]) is video
