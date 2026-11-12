@@ -17,6 +17,8 @@ SOCKET_TIMEOUT_SECONDS = 30
 MAX_SOURCE_SECONDS = 3 * 60 * 60
 THUMBNAIL_URL = "https://i.ytimg.com/vi/{video_id}/hqdefault.jpg"
 UNAVAILABLE_TITLES = ("[private video]", "[deleted video]")
+LIVE_STREAM_REFUSAL = "live streams cannot be converted"
+TOO_LONG_REFUSAL = "the video is longer than 3 hours"
 
 YdlFactory = Callable[[dict], "yt_dlp.YoutubeDL"]
 
@@ -40,6 +42,15 @@ class Match:
 
 def _base_options() -> dict:
     return {"quiet": True, "no_warnings": True, "noprogress": True, "socket_timeout": SOCKET_TIMEOUT_SECONDS, "noplaylist": True}
+
+
+def source_refusal(info: dict, *, incomplete: bool = False) -> str | None:
+    if info.get("is_live"):
+        return LIVE_STREAM_REFUSAL
+    duration = info.get("duration")
+    if isinstance(duration, (int, float)) and duration > MAX_SOURCE_SECONDS:
+        return TOO_LONG_REFUSAL
+    return None
 
 
 def thumbnail_url(video_id: str) -> str:
@@ -145,8 +156,12 @@ class YouTube:
 
     def download_audio(self, match: Match, folder: Path) -> Path:
         if match.duration_seconds > MAX_SOURCE_SECONDS:
-            raise YouTubeError("the video is longer than 3 hours")
-        info = self._extract(match.url, {"format": "bestaudio/best", "outtmpl": str(folder / "source.%(ext)s")}, download=True)
+            raise YouTubeError(TOO_LONG_REFUSAL)
+        options = {"format": "bestaudio/best", "outtmpl": str(folder / "source.%(ext)s"), "match_filter": source_refusal}
+        info = self._extract(match.url, options, download=True)
+        refusal = source_refusal(info)
+        if refusal:
+            raise YouTubeError(refusal)
         downloads = info.get("requested_downloads") or []
         path = Path(downloads[0]["filepath"]) if downloads and downloads[0].get("filepath") else None
         if path is None or not path.is_file():
