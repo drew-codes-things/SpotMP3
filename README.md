@@ -107,6 +107,8 @@ or remove accounts for other people from the **Accounts** button.
 | `RESOLVES_PER_MINUTE` / `JOBS_PER_MINUTE` | How many links one person can read, and how many jobs they can start, per minute. One link is read at a time per person. Defaults `10` and `10`. |
 | `YTDLP_AUTO_UPDATE` | `true` (default) updates yt-dlp every time SpotMP3 starts. See "Keeping YouTube working". |
 | `AUTH_MODE` | `builtin` (accounts in SpotMP3, the default) or `starfire` to trust an existing [starfire.ai](https://github.com/drew-codes-things/starfire.ai) sign-in via `STARFIRE_ME_URL`. |
+| `STARFIRE_ME_URL` | With `AUTH_MODE=starfire`, the starfire address that says who is signed in. Default `http://127.0.0.1:8090/api/auth/me`. |
+| `STARFIRE_SIGNIN_PATH` | With `AUTH_MODE=starfire`, where signed-out visitors are sent. Default `/signin/`. |
 
 ## Connect Spotify (optional)
 
