@@ -1,6 +1,4 @@
 import logging
-import tempfile
-import zipfile
 from functools import wraps
 from pathlib import Path
 
@@ -15,6 +13,7 @@ from .sources import SourceError, resolve_any
 from .tracks import Collection
 from .worker import Worker
 from .youtube import YouTube
+from .zipstream import attachment_names, stream_zip
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 CLIENT_HEADER = "X-SpotMP3"
@@ -306,14 +305,10 @@ def create_app(settings: Settings, auth, jobs: JobStore, worker: Worker, youtube
     @signed_in
     def job_zip(job_id: int):
         name, files = jobs.job_files(current_user().owner_key, job_id)
-        archive = tempfile.TemporaryFile(dir=settings.work_dir)
-        with zipfile.ZipFile(archive, "w", zipfile.ZIP_STORED) as bundle:
-            for relative_path, file_name in files:
-                path = worker.file_for(relative_path)
-                if path:
-                    bundle.write(path, arcname=file_name)
-        archive.seek(0)
+        entries = [(path, file_name) for path, file_name in ((worker.file_for(relative), file_name) for relative, file_name in files) if path]
         zip_name = UNSAFE_FILE_CHARACTERS.sub("", name).strip(" .")[:MAX_ZIP_NAME_LENGTH] or "SpotMP3"
-        return send_file(archive, mimetype="application/zip", as_attachment=True, download_name=f"{zip_name}.zip")
+        response = Response(stream_zip(entries), mimetype="application/zip")
+        response.headers.set("Content-Disposition", "attachment", **attachment_names(f"{zip_name}.zip"))
+        return response
 
     return app
