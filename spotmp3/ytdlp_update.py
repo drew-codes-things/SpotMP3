@@ -38,6 +38,7 @@ def update_ytdlp(run=subprocess.run) -> tuple[str | None, str | None]:
 
 def update_and_restart_if_needed(enabled: bool, environ=os.environ, execv=os.execv, update=update_ytdlp) -> bool:
     if not enabled or environ.get(ALREADY_UPDATED_FLAG):
+        log.info("yt-dlp %s is installed (no update at this start)", installed_version())
         return False
     before, after = update()
     if before == after:

@@ -1,3 +1,4 @@
+import logging
 import subprocess
 import sys
 
@@ -46,3 +47,10 @@ def test_pip_failure_keeps_the_installed_version(monkeypatch):
 
 def test_installed_version_reads_the_real_package():
     assert ytdlp_update.installed_version().startswith("20")
+
+
+def test_the_running_version_is_logged_when_updating_is_off(monkeypatch, caplog):
+    monkeypatch.setattr(ytdlp_update, "installed_version", lambda: "2026.10.26")
+    with caplog.at_level(logging.INFO, logger="spotmp3.ytdlp"):
+        assert not ytdlp_update.update_and_restart_if_needed(False, environ={}, execv=None, update=None)
+    assert "yt-dlp 2026.10.26" in caplog.text
