@@ -45,6 +45,8 @@ class Settings:
     min_free_mb: int = 500
     max_tracks_per_job: int = 500
     max_open_jobs_per_user: int = 5
+    resolves_per_minute: int = 10
+    jobs_per_minute: int = 10
     ytdlp_auto_update: bool = True
 
     @property
@@ -93,6 +95,8 @@ def load_settings() -> Settings:
         min_free_mb=_number("MIN_FREE_MB", 500, 50),
         max_tracks_per_job=_number("MAX_TRACKS_PER_JOB", 500, 1),
         max_open_jobs_per_user=_number("MAX_OPEN_JOBS_PER_USER", 5, 1),
+        resolves_per_minute=_number("RESOLVES_PER_MINUTE", 10, 1),
+        jobs_per_minute=_number("JOBS_PER_MINUTE", 10, 1),
         ytdlp_auto_update=ytdlp_auto_update_enabled(),
     )
 

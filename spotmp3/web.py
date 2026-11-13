@@ -1,4 +1,5 @@
 import logging
+import time
 from functools import wraps
 from pathlib import Path
 
@@ -8,6 +9,7 @@ from .audio import DEFAULT_QUALITY, UNSAFE_FILE_CHARACTERS, quality_choices
 from .auth import SESSION_COOKIE, SESSION_SECONDS, AuthError, BuiltinAuth
 from .config import Settings
 from .jobs import JobError, JobStore
+from .ratelimit import OneAtATime, RateLimiter
 from .site_settings import SiteSettings, SiteSettingsError
 from .sources import SourceError, resolve_any
 from .tracks import Collection
@@ -52,8 +54,12 @@ def _body() -> dict:
     return data
 
 
-def create_app(settings: Settings, auth, jobs: JobStore, worker: Worker, youtube: YouTube, site_settings: SiteSettings, resolver=resolve_any) -> Flask:
+def create_app(settings: Settings, auth, jobs: JobStore, worker: Worker, youtube: YouTube, site_settings: SiteSettings, resolver=resolve_any,
+               clock=time.monotonic) -> Flask:
     app = Flask(__name__, static_folder=None)
+    resolve_limit = RateLimiter(settings.resolves_per_minute, clock)
+    job_limit = RateLimiter(settings.jobs_per_minute, clock)
+    resolving = OneAtATime()
     app.config["MAX_CONTENT_LENGTH"] = MAX_REQUEST_BYTES
     is_builtin = isinstance(auth, BuiltinAuth)
     signin_path = "/signin" if is_builtin else settings.starfire_signin_path
@@ -243,13 +249,20 @@ def create_app(settings: Settings, auth, jobs: JobStore, worker: Worker, youtube
         link = _body().get("link")
         if not isinstance(link, str) or not link.strip() or len(link) > MAX_LINK_LENGTH:
             return _error("paste a Spotify or YouTube link", 400)
+        owner = current_user().owner_key
+        if not resolving.try_start(owner):
+            return _error("still reading your last link, wait for it to finish", 429)
         try:
+            if not resolve_limit.allow(owner):
+                return _error(f"you can read {settings.resolves_per_minute} links a minute, wait a moment", 429)
             collection = resolver(link.strip(), youtube, settings.max_tracks_per_job)
         except SourceError as error:
             return _error(str(error), 400)
         except OSError as error:
             log.warning("reading %r failed: %s", link, error)
             return _error("that link could not be read right now, try again in a moment", 502)
+        finally:
+            resolving.finish(owner)
         return jsonify(_collection_json(collection))
 
     @app.get("/api/jobs")
@@ -262,6 +275,8 @@ def create_app(settings: Settings, auth, jobs: JobStore, worker: Worker, youtube
     def create_job():
         if not worker.has_free_space():
             return _error("the server is low on disk space, try again later", 507)
+        if not job_limit.allow(current_user().owner_key):
+            return _error(f"you can start {settings.jobs_per_minute} jobs a minute, wait a moment", 429)
         data = _body()
         job_id = jobs.create(current_user().owner_key, data.get("name"), data.get("quality"), data.get("tracks"))
         worker.notify()

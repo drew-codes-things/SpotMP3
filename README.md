@@ -104,6 +104,7 @@ or remove accounts for other people from the **Accounts** button.
 | `STORAGE_LIMIT_MB` | Oldest files are cleaned up once finished files plus the database pass this. Default `2048`. |
 | `MIN_FREE_MB` | Conversions pause, and new jobs are refused, when the disk has less free space than this. Default `500`. |
 | `MAX_TRACKS_PER_JOB` / `MAX_OPEN_JOBS_PER_USER` | Limits per conversion and per person. Defaults `500` and `5`. |
+| `RESOLVES_PER_MINUTE` / `JOBS_PER_MINUTE` | How many links one person can read, and how many jobs they can start, per minute. One link is read at a time per person. Defaults `10` and `10`. |
 | `YTDLP_AUTO_UPDATE` | `true` (default) updates yt-dlp every time SpotMP3 starts. See "Keeping YouTube working". |
 | `AUTH_MODE` | `builtin` (accounts in SpotMP3, the default) or `starfire` to trust an existing [starfire.ai](https://github.com/drew-codes-things/starfire.ai) sign-in via `STARFIRE_ME_URL`. |
 

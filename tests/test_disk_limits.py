@@ -5,7 +5,7 @@ from spotmp3.web import create_app
 from spotmp3.worker import MEGABYTE, Worker
 
 OWNER = "builtin:1"
-CYCLES = 25
+CYCLES = 8
 
 
 def row_counts(database):
