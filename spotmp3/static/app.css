@@ -370,3 +370,7 @@ main.app { max-width: 980px; margin: 0 auto; padding: 12px 16px 48px; padding-bo
   .actions { justify-content: flex-start; }
   .who { display: none; }
 }
+
+@media (max-width: 820px), (pointer: coarse) {
+  button, .button { min-height: 44px; }
+}
