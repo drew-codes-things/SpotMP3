@@ -1,6 +1,6 @@
 import pytest
 
-from spotmp3.youtube import MAX_SOURCE_SECONDS, Match, YouTube, YouTubeError
+from spotmp3.youtube import MAX_SOURCE_BYTES, MAX_SOURCE_SECONDS, Match, YouTube, YouTubeError
 
 VIDEO_ID = "abcdefghijk"
 
@@ -53,3 +53,30 @@ def test_a_video_longer_than_the_claimed_length_allows_is_refused(tmp_path):
     with pytest.raises(YouTubeError, match="longer than 3 hours"):
         youtube.download_audio(claimed_short_match(), tmp_path)
     assert list(tmp_path.iterdir()) == []
+
+
+class EndlessDownloader(FilterHonouringDownloader):
+    def extract_info(self, url, download):
+        info = dict(self.video_info)
+        path = self.options["outtmpl"].replace("%(ext)s", "webm")
+        written = 0
+        with open(path, "wb") as handle:
+            for _ in range(64):
+                handle.write(b"\0" * 1024)
+                written += 64 * 1024 * 1024
+                for hook in self.options.get("progress_hooks", []):
+                    hook({"status": "downloading", "downloaded_bytes": written, "filename": path})
+        info["requested_downloads"] = [{"filepath": path}]
+        return info
+
+
+def test_a_source_that_grows_past_the_size_cap_is_stopped(tmp_path):
+    seen = {}
+
+    def factory(options):
+        seen.update(options)
+        return EndlessDownloader(options, {"id": VIDEO_ID, "duration": 181, "is_live": False})
+
+    with pytest.raises(YouTubeError, match="larger than"):
+        YouTube(factory).download_audio(claimed_short_match(), tmp_path)
+    assert seen["max_filesize"] == MAX_SOURCE_BYTES

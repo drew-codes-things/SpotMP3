@@ -15,16 +15,27 @@ MUSIC_RESULTS_CHECKED = 3
 VIDEO_RESULTS_CHECKED = 8
 SOCKET_TIMEOUT_SECONDS = 30
 MAX_SOURCE_SECONDS = 3 * 60 * 60
+MAX_SOURCE_BYTES = 512 * 1024 * 1024
 THUMBNAIL_URL = "https://i.ytimg.com/vi/{video_id}/hqdefault.jpg"
 UNAVAILABLE_TITLES = ("[private video]", "[deleted video]")
 LIVE_STREAM_REFUSAL = "live streams cannot be converted"
 TOO_LONG_REFUSAL = "the video is longer than 3 hours"
+TOO_LARGE_REFUSAL = "the download is larger than 512 MB"
 
 YdlFactory = Callable[[dict], "yt_dlp.YoutubeDL"]
 
 
 class YouTubeError(RuntimeError):
     pass
+
+
+class SourceTooLarge(yt_dlp.utils.DownloadCancelled):
+    msg = TOO_LARGE_REFUSAL
+
+
+def stop_past_size_cap(progress: dict) -> None:
+    if (progress.get("downloaded_bytes") or 0) > MAX_SOURCE_BYTES:
+        raise SourceTooLarge()
 
 
 @dataclass(frozen=True)
@@ -95,6 +106,8 @@ class YouTube:
                 info = ydl.extract_info(url, download=download)
         except yt_dlp.utils.DownloadError as error:
             raise YouTubeError(str(error).replace("ERROR: ", "")[:300]) from error
+        except SourceTooLarge as error:
+            raise YouTubeError(TOO_LARGE_REFUSAL) from error
         if not isinstance(info, dict):
             raise YouTubeError(f"YouTube returned nothing for {url}")
         return info
@@ -157,7 +170,8 @@ class YouTube:
     def download_audio(self, match: Match, folder: Path) -> Path:
         if match.duration_seconds > MAX_SOURCE_SECONDS:
             raise YouTubeError(TOO_LONG_REFUSAL)
-        options = {"format": "bestaudio/best", "outtmpl": str(folder / "source.%(ext)s"), "match_filter": source_refusal}
+        options = {"format": "bestaudio/best", "outtmpl": str(folder / "source.%(ext)s"), "match_filter": source_refusal,
+                   "max_filesize": MAX_SOURCE_BYTES, "progress_hooks": [stop_past_size_cap]}
         info = self._extract(match.url, options, download=True)
         refusal = source_refusal(info)
         if refusal:
