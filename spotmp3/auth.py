@@ -123,6 +123,8 @@ class BuiltinAuth:
 
     def _record_failure(self, connection, key: str) -> None:
         current = now()
+        connection.execute("DELETE FROM sign_in_failures WHERE first_failure_at < ? AND locked_until < ?",
+                           (current - FAILURE_WINDOW_SECONDS, current))
         row = connection.execute("SELECT failures, first_failure_at FROM sign_in_failures WHERE key = ?", (key,)).fetchone()
         if row is None or current - row["first_failure_at"] > FAILURE_WINDOW_SECONDS:
             connection.execute("INSERT OR REPLACE INTO sign_in_failures (key, failures, first_failure_at, locked_until) VALUES (?, 1, ?, 0)", (key, current))

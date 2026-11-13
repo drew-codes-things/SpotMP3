@@ -118,3 +118,18 @@ def test_starfire_signed_out_and_unreachable():
         StarfireAuth("http://x/me", unreachable).current_user(None, "a=b")
     assert failed.value.status == 502
     assert auth_module.STARFIRE_CACHE_SECONDS > 0
+
+
+def test_old_sign_in_failures_are_pruned(auth, monkeypatch):
+    import spotmp3.auth as auth_module
+    clock = {"now": 1_000_000.0}
+    monkeypatch.setattr(auth_module, "now", lambda: clock["now"])
+    auth.create_first_admin("admin@example.com", PASSWORD, PASSWORD)
+    for number in range(50):
+        with pytest.raises(AuthError):
+            auth.sign_in(f"made-up-{number}@example.com", "wrong password!", "1.2.3.4")
+    clock["now"] += auth_module.FAILURE_WINDOW_SECONDS + auth_module.LOCKOUT_SECONDS + 1
+    with pytest.raises(AuthError):
+        auth.sign_in("one-more@example.com", "wrong password!", "1.2.3.4")
+    with auth.database.connect() as connection:
+        assert connection.execute("SELECT COUNT(*) FROM sign_in_failures").fetchone()[0] == 1
