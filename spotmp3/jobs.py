@@ -92,7 +92,8 @@ class JobStore:
         with self.database.connect() as connection:
             self._owned_job(connection, owner, job_id)
             connection.execute("UPDATE jobs SET cancelled = 1 WHERE id = ?", (job_id,))
-            connection.execute("UPDATE items SET status = 'cancelled', finished_at = ? WHERE job_id = ? AND status = 'queued'", (now(), job_id))
+            connection.execute("DELETE FROM items WHERE job_id = ? AND status = 'queued'", (job_id,))
+            connection.execute("DELETE FROM jobs WHERE id = ? AND NOT EXISTS (SELECT 1 FROM items WHERE items.job_id = jobs.id)", (job_id,))
 
     def delete(self, owner: str, job_id: int) -> None:
         with self.database.connect() as connection:

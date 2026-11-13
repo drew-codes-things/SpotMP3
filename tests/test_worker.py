@@ -68,7 +68,7 @@ def test_cancelled_jobs_are_skipped(jobs, worker, database):
     job_id = jobs.create(OWNER, "x", "128", [sample_track(), sample_track("Two")])
     jobs.cancel(OWNER, job_id)
     assert worker.process_next() is None
-    assert {row["status"] for row in item_rows(database)} == {"cancelled"}
+    assert item_rows(database) == []
 
 
 def test_job_cancelled_mid_conversion_keeps_no_file(jobs, worker, database, settings, fake_youtube):

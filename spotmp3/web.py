@@ -261,6 +261,8 @@ def create_app(settings: Settings, auth, jobs: JobStore, worker: Worker, youtube
     @app.post("/api/jobs")
     @signed_in
     def create_job():
+        if not worker.has_free_space():
+            return _error("the server is low on disk space, try again later", 507)
         data = _body()
         job_id = jobs.create(current_user().owner_key, data.get("name"), data.get("quality"), data.get("tracks"))
         worker.notify()

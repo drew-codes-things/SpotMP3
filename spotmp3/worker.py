@@ -76,6 +76,10 @@ class Worker:
                 log.exception("the worker loop hit an unexpected error")
                 self._stop.wait(IDLE_WAIT_SECONDS)
 
+    def database_bytes(self) -> int:
+        path = self.settings.database_path
+        return sum(candidate.stat().st_size for candidate in path.parent.glob(path.name + "*") if candidate.is_file())
+
     def has_free_space(self) -> bool:
         return self._free_bytes(self.settings.data_dir) >= self.settings.min_free_mb * MEGABYTE
 
@@ -155,7 +159,7 @@ class Worker:
     def cleanup(self) -> None:
         self._last_cleanup = now()
         cutoff = now() - self.settings.retention_hours * 3600
-        limit = self.settings.storage_limit_mb * MEGABYTE
+        limit = self.settings.storage_limit_mb * MEGABYTE - self.database_bytes()
         with self.database.connect() as connection:
             for row in connection.execute("SELECT id, file_path FROM items WHERE status = 'done' AND finished_at < ?", (cutoff,)).fetchall():
                 self._expire(connection, row["id"], row["file_path"])
