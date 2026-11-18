@@ -55,8 +55,8 @@ def test_auto_is_secure_everywhere_but_plain_http_on_localhost(app_parts):
     application = app_with(app_parts, "auto")
     local = set_up_admin(application.test_client())
     assert "Secure" not in session_cookie(local)
-    assert "Secure" in session_cookie(sign_in(application.test_client(), "http://spotmp3.example.com"))
-    assert "Secure" in session_cookie(sign_in(application.test_client(), "https://spotmp3.example.com"))
+    assert "Secure" in session_cookie(sign_in(application.test_client(), "http://192.0.2.1:8095"))
+    assert "Secure" in session_cookie(sign_in(application.test_client(), "https://192.0.2.1:8095"))
 
 
 @pytest.mark.parametrize("choice, secure", [("true", True), ("false", False)])

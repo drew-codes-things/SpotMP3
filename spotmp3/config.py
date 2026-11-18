@@ -27,6 +27,10 @@ def _number(name: str, default: int, minimum: int) -> int:
     return value
 
 
+def _list(name: str) -> tuple[str, ...]:
+    return tuple(part.strip() for part in _text(name, "").split(",") if part.strip())
+
+
 def _flag(name: str, default: bool) -> bool:
     return _text(name, "true" if default else "false").lower() in ("1", "true", "yes", "on")
 
@@ -40,6 +44,7 @@ class Settings:
     starfire_me_url: str = "http://127.0.0.1:8090/api/auth/me"
     starfire_signin_path: str = "/signin/"
     secure_cookies: str = "auto"
+    allowed_hosts: tuple[str, ...] = ()
     spotify_client_id: str = ""
     public_url: str = ""
     retention_hours: int = 24
@@ -94,6 +99,7 @@ def load_settings() -> Settings:
         starfire_me_url=_text("STARFIRE_ME_URL", "http://127.0.0.1:8090/api/auth/me"),
         starfire_signin_path=_text("STARFIRE_SIGNIN_PATH", "/signin/"),
         secure_cookies=secure_cookies,
+        allowed_hosts=tuple(host.lower() for host in _list("ALLOWED_HOSTS")),
         spotify_client_id=_text("SPOTIFY_CLIENT_ID", ""),
         public_url=_text("PUBLIC_URL", ""),
         retention_hours=_number("RETENTION_HOURS", 24, 1),

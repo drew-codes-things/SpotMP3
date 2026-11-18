@@ -88,9 +88,18 @@ python -m spotmp3
 ```
 
 Then open `http://127.0.0.1:8095`. The first visit shows a **setup page**
-where you create the first account. That account is the admin and can add
-or remove accounts for other people from the **Accounts** button. There is
-no sign-up page. The sign-in cookie is `Secure` on every address except
+where you create the first account. It asks for a one-time setup code that
+SpotMP3 writes to its log when it starts, a line like `no account yet: open
+/setup and enter the setup code ...`, so nobody who reaches the page before
+you can take the admin account. The code works once; if the accounts are
+ever all gone, the next visit to the setup page writes a new one. That
+account is the admin and can add or remove accounts for other people from
+the **Accounts** button. There is no sign-up page.
+
+With built-in accounts SpotMP3 answers only on `localhost`, `127.0.0.1`,
+`[::1]`, IP addresses and this machine's own name; any other `Host` gets
+`421`, so a web page cannot reach a copy on your machine by DNS rebinding.
+Behind a reverse proxy, put the public host name in `ALLOWED_HOSTS`. The sign-in cookie is `Secure` on every address except
 plain `http` on `localhost`, so on a plain `http` address on your home
 network either use https or set `SECURE_COOKIES=false` (see below).
 
@@ -102,6 +111,7 @@ network either use https or set `SECURE_COOKIES=false` (see below).
 | `DATA_DIR` | Database, finished files and temporary work. Default `./data`. |
 | `PUBLIC_URL` | The address people use, e.g. `https://mp3.example.com`. Needed for Spotify connect. |
 | `SECURE_COOKIES` | `auto` (default): the session cookie is `Secure` everywhere except plain `http` to `localhost`, `127.0.0.1` or `[::1]`. On a plain `http` address on your home network the browser drops a `Secure` cookie, so use https there or set `false`. `true` forces it. `1`, `yes`, `on` mean `true` and `0`, `no`, `off` mean `false`. |
+| `ALLOWED_HOSTS` | With built-in accounts, the only host names SpotMP3 answers on, comma separated (others get 421). Empty (default): `localhost`, `127.0.0.1`, `[::1]`, IP addresses and this machine's own name. |
 | `SPOTIFY_CLIENT_ID` | Optional, turns on Connect Spotify (see below). Easier to set on the site's Settings page. |
 | `RETENTION_HOURS` | How long finished files are kept. Default `24`. |
 | `STORAGE_LIMIT_MB` | Oldest files are cleaned up once finished files plus the database pass this. Default `2048`. |

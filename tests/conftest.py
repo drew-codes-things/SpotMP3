@@ -1,4 +1,6 @@
 import json
+import logging
+import re
 import subprocess
 from pathlib import Path
 
@@ -18,6 +20,21 @@ from spotmp3.youtube import Match
 PLENTY_OF_SPACE = 10 ** 12
 CLIENT_HEADERS = {"X-SpotMP3": "1"}
 TEST_PASSWORD = "correct horse battery"
+
+
+class SetupCodeLog(logging.Handler):
+    def __init__(self):
+        super().__init__(level=logging.WARNING)
+        self.latest = None
+
+    def emit(self, record):
+        found = re.search(r"setup code (\S+)", record.getMessage())
+        if found:
+            self.latest = found.group(1)
+
+
+SETUP_CODES = SetupCodeLog()
+logging.getLogger("spotmp3.auth").addHandler(SETUP_CODES)
 
 
 def embed_page(entity: dict) -> str:
@@ -98,7 +115,13 @@ def client(app):
     return app.test_client()
 
 
+def setup_code_from_the_log(client) -> str | None:
+    client.get("/setup")
+    return SETUP_CODES.latest
+
+
 def set_up_admin(client, email: str = "admin@example.com"):
-    response = client.post("/api/setup", json={"email": email, "password": TEST_PASSWORD, "confirm": TEST_PASSWORD}, headers=CLIENT_HEADERS)
+    details = {"code": setup_code_from_the_log(client), "email": email, "password": TEST_PASSWORD, "confirm": TEST_PASSWORD}
+    response = client.post("/api/setup", json=details, headers=CLIENT_HEADERS)
     assert response.status_code == 200, response.get_json()
     return response

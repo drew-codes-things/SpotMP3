@@ -1,6 +1,8 @@
+import ipaddress
 import logging
+import socket
 import time
-from functools import wraps
+from functools import lru_cache, wraps
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -25,6 +27,11 @@ MAX_LINK_LENGTH = 2048
 MAX_ZIP_NAME_LENGTH = 100
 SAFE_METHODS = ("GET", "HEAD", "OPTIONS")
 LOOPBACK_HOST_NAMES = ("localhost", "127.0.0.1", "::1")
+LOOPBACK_DOMAIN_SUFFIX = ".localhost"
+LOCAL_NETWORK_SUFFIX = ".local"
+MISDIRECTED_REQUEST = 421
+WRONG_HOST_TEXT = ("SpotMP3 does not answer on that host name: with built-in accounts it answers on the names in "
+                   "ALLOWED_HOSTS, or with it empty on localhost, IP addresses and this machine's name")
 CONTENT_SECURITY_POLICY = "; ".join((
     "default-src 'self'",
     "script-src 'self'",
@@ -54,6 +61,30 @@ def _host_name(host: str) -> str:
         return (urlsplit(f"//{host or ''}").hostname or "").lower()
     except ValueError:
         return ""
+
+
+def _is_address(name: str) -> bool:
+    try:
+        ipaddress.ip_address(name)
+    except ValueError:
+        return False
+    return True
+
+
+@lru_cache(maxsize=1)
+def _own_host_names() -> frozenset:
+    short = socket.gethostname().lower()
+    names = {short, socket.getfqdn().lower(), short.split(".")[0] + LOCAL_NETWORK_SUFFIX}
+    return frozenset(name for name in names if name and name != LOCAL_NETWORK_SUFFIX)
+
+
+def is_allowed_host(host: str, allowed_hosts: tuple[str, ...]) -> bool:
+    name = _host_name(host)
+    if allowed_hosts:
+        return name in allowed_hosts
+    if name in LOOPBACK_HOST_NAMES or name.endswith(LOOPBACK_DOMAIN_SUFFIX) or _is_address(name):
+        return True
+    return name in _own_host_names()
 
 
 def _body() -> dict:
@@ -115,6 +146,12 @@ def create_app(settings: Settings, auth, jobs: JobStore, worker: Worker, youtube
         return response
 
     @app.before_request
+    def refuse_foreign_host_names():
+        if is_builtin and not is_allowed_host(request.host, settings.allowed_hosts):
+            return _error(WRONG_HOST_TEXT, MISDIRECTED_REQUEST)
+        return None
+
+    @app.before_request
     def require_client_header():
         writes_api = request.method not in SAFE_METHODS and request.path.startswith("/api/")
         if writes_api and request.headers.get(CLIENT_HEADER) != "1":
@@ -162,6 +199,7 @@ def create_app(settings: Settings, auth, jobs: JobStore, worker: Worker, youtube
     def setup_page():
         if not is_builtin or not auth.needs_setup():
             return redirect("/")
+        auth.setup_code()
         return page("setup.html")
 
     @app.get("/signin")
@@ -190,7 +228,8 @@ def create_app(settings: Settings, auth, jobs: JobStore, worker: Worker, youtube
         if not is_builtin:
             return _error("setup is only used with built-in accounts", 404)
         data = _body()
-        token = auth.create_first_admin(data.get("email"), data.get("password"), data.get("confirm"))
+        token = auth.create_first_admin(data.get("code"), data.get("email"), data.get("password"), data.get("confirm"),
+                                        request.remote_addr or "unknown")
         return set_session(jsonify({"ok": True}), token)
 
     @app.post("/api/signin")

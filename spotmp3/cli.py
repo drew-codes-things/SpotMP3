@@ -48,7 +48,10 @@ def serve() -> None:
     youtube = YouTube()
     worker = Worker(settings, database, Pipeline(youtube))
     worker.start()
-    app = create_app(settings, build_auth(settings, database), JobStore(database, settings), worker, youtube, SiteSettings(database, settings))
+    auth = build_auth(settings, database)
+    if isinstance(auth, BuiltinAuth):
+        auth.setup_code()
+    app = create_app(settings, auth, JobStore(database, settings), worker, youtube, SiteSettings(database, settings))
     log.info("SpotMP3 %s listening on http://%s:%s (%s accounts)", __version__, settings.bind_host, settings.port, settings.auth_mode)
     try:
         waitress_serve(app, host=settings.bind_host, port=settings.port, threads=SERVER_THREADS, ident="SpotMP3")

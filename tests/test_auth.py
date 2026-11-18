@@ -15,12 +15,12 @@ def test_password_hashes_round_trip():
 
 def test_first_run_setup_happens_once(auth):
     assert auth.needs_setup()
-    token = auth.create_first_admin("Admin@Example.com ", PASSWORD, PASSWORD)
+    token = auth.create_first_admin(auth.setup_code(), "Admin@Example.com ", PASSWORD, PASSWORD)
     user = auth.current_user(token)
     assert (user.email, user.is_admin) == ("admin@example.com", True)
     assert not auth.needs_setup()
     with pytest.raises(AuthError) as refused:
-        auth.create_first_admin("other@example.com", PASSWORD, PASSWORD)
+        auth.create_first_admin(auth.setup_code(), "other@example.com", PASSWORD, PASSWORD)
     assert refused.value.status == 403
 
 
@@ -32,11 +32,11 @@ def test_first_run_setup_happens_once(auth):
 ])
 def test_setup_validates(auth, email, password, confirm):
     with pytest.raises(AuthError):
-        auth.create_first_admin(email, password, confirm)
+        auth.create_first_admin(auth.setup_code(), email, password, confirm)
 
 
 def test_sign_in_sign_out(auth):
-    auth.create_first_admin("admin@example.com", PASSWORD, PASSWORD)
+    auth.create_first_admin(auth.setup_code(), "admin@example.com", PASSWORD, PASSWORD)
     token = auth.sign_in("ADMIN@example.com", PASSWORD, "1.2.3.4")
     assert auth.current_user(token).email == "admin@example.com"
     auth.sign_out(token)
@@ -45,7 +45,7 @@ def test_sign_in_sign_out(auth):
 
 
 def test_lockout_after_five_failures(auth):
-    auth.create_first_admin("admin@example.com", PASSWORD, PASSWORD)
+    auth.create_first_admin(auth.setup_code(), "admin@example.com", PASSWORD, PASSWORD)
     for _ in range(5):
         with pytest.raises(AuthError) as failed:
             auth.sign_in("admin@example.com", "wrong password!", "1.2.3.4")
@@ -57,13 +57,13 @@ def test_lockout_after_five_failures(auth):
 
 
 def test_unknown_email_fails_like_a_wrong_password(auth):
-    auth.create_first_admin("admin@example.com", PASSWORD, PASSWORD)
+    auth.create_first_admin(auth.setup_code(), "admin@example.com", PASSWORD, PASSWORD)
     with pytest.raises(AuthError, match="wrong email or password"):
         auth.sign_in("nobody@example.com", PASSWORD, "1.2.3.4")
 
 
 def test_admin_adds_and_removes_accounts(auth):
-    token = auth.create_first_admin("admin@example.com", PASSWORD, PASSWORD)
+    token = auth.create_first_admin(auth.setup_code(), "admin@example.com", PASSWORD, PASSWORD)
     admin = auth.current_user(token)
     added = auth.add_account("friend@example.com", PASSWORD, PASSWORD, False)
     with pytest.raises(AuthError):
@@ -124,7 +124,7 @@ def test_old_sign_in_failures_are_pruned(auth, monkeypatch):
     import spotmp3.auth as auth_module
     clock = {"now": 1_000_000.0}
     monkeypatch.setattr(auth_module, "now", lambda: clock["now"])
-    auth.create_first_admin("admin@example.com", PASSWORD, PASSWORD)
+    auth.create_first_admin(auth.setup_code(), "admin@example.com", PASSWORD, PASSWORD)
     for number in range(50):
         with pytest.raises(AuthError):
             auth.sign_in(f"made-up-{number}@example.com", "wrong password!", "1.2.3.4")

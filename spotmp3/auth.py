@@ -2,6 +2,7 @@ import base64
 import hashlib
 import hmac
 import json
+import logging
 import re
 import secrets
 import threading
@@ -28,6 +29,10 @@ SCRYPT_PARALLEL = 1
 SCRYPT_LENGTH = 32
 STARFIRE_TIMEOUT_SECONDS = 5
 STARFIRE_CACHE_SECONDS = 30
+SETUP_CODE_BYTES = 9
+SETUP_PATH = "/setup"
+
+log = logging.getLogger("spotmp3.auth")
 
 
 class AuthError(ValueError):
@@ -94,6 +99,8 @@ class BuiltinAuth:
     def __init__(self, database: Database):
         self.database = database
         self._dummy_hash = hash_password(secrets.token_hex(8))
+        self._setup_code: str | None = None
+        self._setup_lock = threading.Lock()
 
     def needs_setup(self) -> bool:
         with self.database.connect() as connection:
@@ -102,7 +109,36 @@ class BuiltinAuth:
     def _user(self, row) -> User:
         return User(owner_key=f"builtin:{row['id']}", email=row["email"], is_admin=bool(row["is_admin"]), user_id=row["id"])
 
-    def create_first_admin(self, email, password, confirm) -> str:
+    def setup_code(self) -> str | None:
+        with self._setup_lock:
+            if self._setup_code is None and self.needs_setup():
+                self._setup_code = secrets.token_urlsafe(SETUP_CODE_BYTES)
+                log.warning("no account yet: open %s and enter the setup code %s", SETUP_PATH, self._setup_code)
+            return self._setup_code
+
+    def _spend_setup_code(self, used: str) -> None:
+        with self._setup_lock:
+            if self._setup_code == used:
+                self._setup_code = None
+
+    def _check_setup_code(self, code, expected: str, client_address: str) -> None:
+        key = f"{client_address}|setup"
+        with self.database.connect() as connection:
+            wait = self._locked_for(connection, key)
+            is_right = wait <= 0 and isinstance(code, str) and hmac.compare_digest(code.strip().encode(), expected.encode())
+            if wait <= 0 and not is_right:
+                self._record_failure(connection, key)
+        if wait > 0:
+            raise AuthError(f"too many attempts, try again in {int(wait // 60) + 1} min", status=429)
+        if not is_right:
+            log.warning("wrong setup code from %s", client_address)
+            raise AuthError("that setup code is wrong; SpotMP3 writes it to its log when it starts", status=401)
+
+    def create_first_admin(self, code, email, password, confirm, client_address: str = "unknown") -> str:
+        expected = self.setup_code()
+        if expected is None:
+            raise AuthError("setup is already finished", status=403)
+        self._check_setup_code(code, expected, client_address)
         address = clean_email(email)
         secret = check_new_password(password, confirm)
         with self.database.connect() as connection:
@@ -110,7 +146,9 @@ class BuiltinAuth:
                 raise AuthError("setup is already finished", status=403)
             cursor = connection.execute("INSERT INTO users (email, password_hash, is_admin, created_at) VALUES (?, ?, 1, ?)",
                                         (address, hash_password(secret), now()))
-            return self._start_session(connection, cursor.lastrowid)
+            token = self._start_session(connection, cursor.lastrowid)
+        self._spend_setup_code(expected)
+        return token
 
     def _start_session(self, connection, user_id: int) -> str:
         token = secrets.token_urlsafe(32)
