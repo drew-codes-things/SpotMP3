@@ -2,6 +2,7 @@ import logging
 import time
 from functools import wraps
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from flask import Flask, Response, g, jsonify, redirect, request, send_file, send_from_directory
 
@@ -23,6 +24,7 @@ MAX_REQUEST_BYTES = 2 * 1024 * 1024
 MAX_LINK_LENGTH = 2048
 MAX_ZIP_NAME_LENGTH = 100
 SAFE_METHODS = ("GET", "HEAD", "OPTIONS")
+LOOPBACK_HOST_NAMES = ("localhost", "127.0.0.1", "::1")
 CONTENT_SECURITY_POLICY = "; ".join((
     "default-src 'self'",
     "script-src 'self'",
@@ -45,6 +47,13 @@ def _error(message: str, status: int):
 def _collection_json(collection: Collection) -> dict:
     return {"kind": collection.kind, "name": collection.name, "truncated": collection.truncated,
             "tracks": [track.to_json() for track in collection.tracks]}
+
+
+def _host_name(host: str) -> str:
+    try:
+        return (urlsplit(f"//{host or ''}").hostname or "").lower()
+    except ValueError:
+        return ""
 
 
 def _body() -> dict:
@@ -96,8 +105,13 @@ def create_app(settings: Settings, auth, jobs: JobStore, worker: Worker, youtube
             return admin_only(view)(*args, **kwargs)
         return wrapper
 
+    def cookie_is_secure() -> bool:
+        if settings.secure_cookies != "auto":
+            return settings.secure_cookies == "true"
+        return request.is_secure or _host_name(request.host) not in LOOPBACK_HOST_NAMES
+
     def set_session(response: Response, token: str) -> Response:
-        response.set_cookie(SESSION_COOKIE, token, max_age=SESSION_SECONDS, httponly=True, samesite="Lax", secure=settings.secure_cookies, path="/")
+        response.set_cookie(SESSION_COOKIE, token, max_age=SESSION_SECONDS, httponly=True, samesite="Lax", secure=cookie_is_secure(), path="/")
         return response
 
     @app.before_request

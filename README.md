@@ -89,7 +89,10 @@ python -m spotmp3
 
 Then open `http://127.0.0.1:8095`. The first visit shows a **setup page**
 where you create the first account. That account is the admin and can add
-or remove accounts for other people from the **Accounts** button.
+or remove accounts for other people from the **Accounts** button. There is
+no sign-up page. The sign-in cookie is `Secure` on every address except
+plain `http` on `localhost`, so on a plain `http` address on your home
+network either use https or set `SECURE_COOKIES=false` (see below).
 
 ## Configuration (`.env`)
 
@@ -98,7 +101,7 @@ or remove accounts for other people from the **Accounts** button.
 | `BIND_HOST` / `PORT` | Where the web app listens. Default `127.0.0.1:8095`. |
 | `DATA_DIR` | Database, finished files and temporary work. Default `./data`. |
 | `PUBLIC_URL` | The address people use, e.g. `https://mp3.example.com`. Needed for Spotify connect. |
-| `SECURE_COOKIES` | Set `true` when served over HTTPS. |
+| `SECURE_COOKIES` | `auto` (default): the session cookie is `Secure` everywhere except plain `http` to `localhost`, `127.0.0.1` or `[::1]`. On a plain `http` address on your home network the browser drops a `Secure` cookie, so use https there or set `false`. `true` forces it. |
 | `SPOTIFY_CLIENT_ID` | Optional, turns on Connect Spotify (see below). Easier to set on the site's Settings page. |
 | `RETENTION_HOURS` | How long finished files are kept. Default `24`. |
 | `STORAGE_LIMIT_MB` | Oldest files are cleaned up once finished files plus the database pass this. Default `2048`. |

@@ -3,6 +3,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 AUTH_MODES = ("builtin", "starfire")
+SECURE_COOKIE_CHOICES = ("auto", "true", "false")
 ENV_FILE = Path(".env")
 
 
@@ -37,7 +38,7 @@ class Settings:
     auth_mode: str = "builtin"
     starfire_me_url: str = "http://127.0.0.1:8090/api/auth/me"
     starfire_signin_path: str = "/signin/"
-    secure_cookies: bool = False
+    secure_cookies: str = "auto"
     spotify_client_id: str = ""
     public_url: str = ""
     retention_hours: int = 24
@@ -80,6 +81,9 @@ def load_settings() -> Settings:
     auth_mode = _text("AUTH_MODE", "builtin").lower()
     if auth_mode not in AUTH_MODES:
         raise ConfigError(f"AUTH_MODE must be one of {', '.join(AUTH_MODES)}, got {auth_mode!r}")
+    secure_cookies = _text("SECURE_COOKIES", "auto").lower()
+    if secure_cookies not in SECURE_COOKIE_CHOICES:
+        raise ConfigError(f"SECURE_COOKIES must be one of {', '.join(SECURE_COOKIE_CHOICES)}, got {secure_cookies!r}")
     return Settings(
         data_dir=Path(_text("DATA_DIR", "./data")).resolve(),
         bind_host=_text("BIND_HOST", "127.0.0.1"),
@@ -87,7 +91,7 @@ def load_settings() -> Settings:
         auth_mode=auth_mode,
         starfire_me_url=_text("STARFIRE_ME_URL", "http://127.0.0.1:8090/api/auth/me"),
         starfire_signin_path=_text("STARFIRE_SIGNIN_PATH", "/signin/"),
-        secure_cookies=_flag("SECURE_COOKIES", False),
+        secure_cookies=secure_cookies,
         spotify_client_id=_text("SPOTIFY_CLIENT_ID", ""),
         public_url=_text("PUBLIC_URL", ""),
         retention_hours=_number("RETENTION_HOURS", 24, 1),
