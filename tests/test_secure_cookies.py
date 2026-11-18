@@ -42,6 +42,15 @@ def test_a_bad_secure_cookies_value_is_refused(monkeypatch, tmp_path):
         load_settings()
 
 
+@pytest.mark.parametrize("value, meaning", [("1", "true"), ("yes", "true"), ("on", "true"), ("TRUE", "true"),
+                                            ("0", "false"), ("no", "false"), ("off", "false"), ("False", "false"),
+                                            ("auto", "auto")])
+def test_secure_cookies_accepts_the_old_spellings(monkeypatch, tmp_path, value, meaning):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("SECURE_COOKIES", value)
+    assert load_settings().secure_cookies == meaning
+
+
 def test_auto_is_secure_everywhere_but_plain_http_on_localhost(app_parts):
     application = app_with(app_parts, "auto")
     local = set_up_admin(application.test_client())

@@ -4,6 +4,7 @@ from pathlib import Path
 
 AUTH_MODES = ("builtin", "starfire")
 SECURE_COOKIE_CHOICES = ("auto", "true", "false")
+SECURE_COOKIE_SPELLINGS = {"1": "true", "yes": "true", "on": "true", "0": "false", "no": "false", "off": "false"}
 ENV_FILE = Path(".env")
 
 
@@ -82,6 +83,7 @@ def load_settings() -> Settings:
     if auth_mode not in AUTH_MODES:
         raise ConfigError(f"AUTH_MODE must be one of {', '.join(AUTH_MODES)}, got {auth_mode!r}")
     secure_cookies = _text("SECURE_COOKIES", "auto").lower()
+    secure_cookies = SECURE_COOKIE_SPELLINGS.get(secure_cookies, secure_cookies)
     if secure_cookies not in SECURE_COOKIE_CHOICES:
         raise ConfigError(f"SECURE_COOKIES must be one of {', '.join(SECURE_COOKIE_CHOICES)}, got {secure_cookies!r}")
     return Settings(
