@@ -94,11 +94,11 @@ def test_starfire_mode_asks_starfire_and_caches(monkeypatch):
 
     def opener(request, timeout):
         calls.append(request.get_header("Cookie"))
-        return FakeResponse(b'{"id": 7, "email": "drew@example.com", "role": "admin"}')
+        return FakeResponse(b'{"id": 7, "email": "owner@example.com", "role": "admin"}')
 
     starfire = StarfireAuth("http://127.0.0.1:8090/api/auth/me", opener)
     user = starfire.current_user(None, "session=abc")
-    assert (user.owner_key, user.email, user.is_admin) == ("starfire:7", "drew@example.com", True)
+    assert (user.owner_key, user.email, user.is_admin) == ("starfire:7", "owner@example.com", True)
     starfire.current_user(None, "session=abc")
     assert calls == ["session=abc"]
     assert starfire.current_user(None, None) is None

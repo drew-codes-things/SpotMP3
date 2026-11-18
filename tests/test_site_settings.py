@@ -18,7 +18,7 @@ def test_saved_values_win_over_the_server_file_and_clearing_falls_back(database,
 
 
 def test_without_any_public_address_the_page_address_is_used(database, settings):
-    assert SiteSettings(database, settings).redirect_uri("http://192.168.1.5:8095/") == "http://192.168.1.5:8095/spotify/callback"
+    assert SiteSettings(database, settings).redirect_uri("http://192.0.2.5:8095/") == "http://192.0.2.5:8095/spotify/callback"
 
 
 @pytest.mark.parametrize("client_id, public_url", [

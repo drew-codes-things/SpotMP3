@@ -208,4 +208,4 @@ Only download music you have the right to.
 
 ## License
 
-MIT - made by Drew
+MIT, see [LICENSE](LICENSE).
