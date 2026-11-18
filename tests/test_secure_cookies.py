@@ -3,7 +3,7 @@ from dataclasses import replace
 import pytest
 
 from conftest import CLIENT_HEADERS, TEST_PASSWORD, set_up_admin
-from spotmp3.config import ConfigError, load_settings
+from spotmp3.config import load_settings
 from spotmp3.web import create_app
 
 
@@ -35,11 +35,12 @@ def test_secure_cookies_default_to_auto(monkeypatch, tmp_path):
     assert load_settings().secure_cookies == "auto"
 
 
-def test_a_bad_secure_cookies_value_is_refused(monkeypatch, tmp_path):
+@pytest.mark.parametrize("value", ["maybe", "enabled", "2", "secure"])
+def test_an_unknown_secure_cookies_value_means_false_as_it_always_has(monkeypatch, tmp_path, caplog, value):
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setenv("SECURE_COOKIES", "maybe")
-    with pytest.raises(ConfigError, match="SECURE_COOKIES"):
-        load_settings()
+    monkeypatch.setenv("SECURE_COOKIES", value)
+    assert load_settings().secure_cookies == "false"
+    assert "SECURE_COOKIES" in caplog.text
 
 
 @pytest.mark.parametrize("value, meaning", [("1", "true"), ("yes", "true"), ("on", "true"), ("TRUE", "true"),

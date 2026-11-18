@@ -110,7 +110,7 @@ network either use https or set `SECURE_COOKIES=false` (see below).
 | `BIND_HOST` / `PORT` | Where the web app listens. Default `127.0.0.1:8095`. |
 | `DATA_DIR` | Database, finished files and temporary work. Default `./data`. |
 | `PUBLIC_URL` | The address people use, e.g. `https://mp3.example.com`. Needed for Spotify connect. |
-| `SECURE_COOKIES` | `auto` (default): the session cookie is `Secure` everywhere except plain `http` to `localhost`, `127.0.0.1` or `[::1]`. On a plain `http` address on your home network the browser drops a `Secure` cookie, so use https there or set `false`. `true` forces it. `1`, `yes`, `on` mean `true` and `0`, `no`, `off` mean `false`. |
+| `SECURE_COOKIES` | `auto` (default): the session cookie is `Secure` everywhere except plain `http` to `localhost`, `127.0.0.1` or `[::1]`. On a plain `http` address on your home network the browser drops a `Secure` cookie, so use https there or set `false`. `true` forces it. `1`, `yes`, `on` mean `true` and `0`, `no`, `off` mean `false`; any other value means `false`, as before, with a warning in the log. |
 | `ALLOWED_HOSTS` | With built-in accounts, the only host names SpotMP3 answers on, comma separated (others get 421). Empty (default): `localhost`, `127.0.0.1`, `[::1]`, IP addresses and this machine's own name. |
 | `SPOTIFY_CLIENT_ID` | Optional, turns on Connect Spotify (see below). Easier to set on the site's Settings page. |
 | `RETENTION_HOURS` | How long finished files are kept. Default `24`. |

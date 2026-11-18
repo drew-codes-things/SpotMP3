@@ -1,3 +1,4 @@
+import logging
 import os
 from dataclasses import dataclass
 from pathlib import Path
@@ -5,7 +6,10 @@ from pathlib import Path
 AUTH_MODES = ("builtin", "starfire")
 SECURE_COOKIE_CHOICES = ("auto", "true", "false")
 SECURE_COOKIE_SPELLINGS = {"1": "true", "yes": "true", "on": "true", "0": "false", "no": "false", "off": "false"}
+UNKNOWN_SECURE_COOKIES_MEANING = "false"
 ENV_FILE = Path(".env")
+
+log = logging.getLogger("spotmp3.config")
 
 
 class ConfigError(ValueError):
@@ -33,6 +37,16 @@ def _list(name: str) -> tuple[str, ...]:
 
 def _flag(name: str, default: bool) -> bool:
     return _text(name, "true" if default else "false").lower() in ("1", "true", "yes", "on")
+
+
+def _secure_cookies() -> str:
+    raw = _text("SECURE_COOKIES", "auto").lower()
+    value = SECURE_COOKIE_SPELLINGS.get(raw, raw)
+    if value in SECURE_COOKIE_CHOICES:
+        return value
+    log.warning("SECURE_COOKIES=%r is not one of %s, so it means %s, as it always has", raw, ", ".join(SECURE_COOKIE_CHOICES),
+                UNKNOWN_SECURE_COOKIES_MEANING)
+    return UNKNOWN_SECURE_COOKIES_MEANING
 
 
 @dataclass(frozen=True)
@@ -87,10 +101,6 @@ def load_settings() -> Settings:
     auth_mode = _text("AUTH_MODE", "builtin").lower()
     if auth_mode not in AUTH_MODES:
         raise ConfigError(f"AUTH_MODE must be one of {', '.join(AUTH_MODES)}, got {auth_mode!r}")
-    secure_cookies = _text("SECURE_COOKIES", "auto").lower()
-    secure_cookies = SECURE_COOKIE_SPELLINGS.get(secure_cookies, secure_cookies)
-    if secure_cookies not in SECURE_COOKIE_CHOICES:
-        raise ConfigError(f"SECURE_COOKIES must be one of {', '.join(SECURE_COOKIE_CHOICES)}, got {secure_cookies!r}")
     return Settings(
         data_dir=Path(_text("DATA_DIR", "./data")).resolve(),
         bind_host=_text("BIND_HOST", "127.0.0.1"),
@@ -98,7 +108,7 @@ def load_settings() -> Settings:
         auth_mode=auth_mode,
         starfire_me_url=_text("STARFIRE_ME_URL", "http://127.0.0.1:8090/api/auth/me"),
         starfire_signin_path=_text("STARFIRE_SIGNIN_PATH", "/signin/"),
-        secure_cookies=secure_cookies,
+        secure_cookies=_secure_cookies(),
         allowed_hosts=tuple(host.lower() for host in _list("ALLOWED_HOSTS")),
         spotify_client_id=_text("SPOTIFY_CLIENT_ID", ""),
         public_url=_text("PUBLIC_URL", ""),
