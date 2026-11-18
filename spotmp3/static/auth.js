@@ -13,11 +13,15 @@ function showError(message) {
 
 function readForm() {
   const values = { email: form.email.value.trim(), password: form.password.value };
-  if (isSetup) values.confirm = form.confirm.value;
+  if (isSetup) {
+    values.confirm = form.confirm.value;
+    values.code = form.code.value.trim();
+  }
   return values;
 }
 
 function problemWith(values) {
+  if (isSetup && !values.code) return 'Enter the setup code from the log.';
   if (!values.email || !values.password) return 'Enter your email and password.';
   if (isSetup && values.password !== values.confirm) return 'The two passwords do not match.';
   return null;

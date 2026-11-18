@@ -37,6 +37,11 @@ def build_auth(settings: Settings, database: Database):
     return BuiltinAuth(database)
 
 
+def waitress_options(settings: Settings) -> dict:
+    keeps_forwarded_for = settings.auth_mode == "builtin" and bool(settings.trusted_proxies)
+    return {"clear_untrusted_proxy_headers": False} if keeps_forwarded_for else {}
+
+
 def serve() -> None:
     from waitress import serve as waitress_serve
 
@@ -48,10 +53,14 @@ def serve() -> None:
     youtube = YouTube()
     worker = Worker(settings, database, Pipeline(youtube))
     worker.start()
-    app = create_app(settings, build_auth(settings, database), JobStore(database, settings), worker, youtube, SiteSettings(database, settings))
+    auth = build_auth(settings, database)
+    if isinstance(auth, BuiltinAuth):
+        auth.setup_code()
+    app = create_app(settings, auth, JobStore(database, settings), worker, youtube, SiteSettings(database, settings))
     log.info("SpotMP3 %s listening on http://%s:%s (%s accounts)", __version__, settings.bind_host, settings.port, settings.auth_mode)
     try:
-        waitress_serve(app, host=settings.bind_host, port=settings.port, threads=SERVER_THREADS, ident="SpotMP3")
+        waitress_serve(app, host=settings.bind_host, port=settings.port, threads=SERVER_THREADS, ident="SpotMP3",
+                       **waitress_options(settings))
     finally:
         worker.stop()
 

@@ -17,11 +17,10 @@ CREATE TABLE IF NOT EXISTS sessions (
     user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     expires_at REAL NOT NULL
 );
-CREATE TABLE IF NOT EXISTS sign_in_failures (
-    key TEXT PRIMARY KEY,
-    failures INTEGER NOT NULL,
-    first_failure_at REAL NOT NULL,
-    locked_until REAL NOT NULL DEFAULT 0
+CREATE TABLE IF NOT EXISTS sign_in_devices (
+    token_hash TEXT PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    created_at REAL NOT NULL
 );
 CREATE TABLE IF NOT EXISTS jobs (
     id INTEGER PRIMARY KEY AUTOINCREMENT,

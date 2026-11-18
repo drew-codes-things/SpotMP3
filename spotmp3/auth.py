@@ -2,6 +2,7 @@ import base64
 import hashlib
 import hmac
 import json
+import logging
 import re
 import secrets
 import threading
@@ -11,13 +12,14 @@ import urllib.request
 from dataclasses import dataclass
 
 from .db import Database, now
+from .ratelimit import FAILURES_PER_DEVICE, FailureLimiter
 
 SESSION_COOKIE = "spotmp3_session"
 SESSION_DAYS = 30
 SESSION_SECONDS = SESSION_DAYS * 24 * 3600
-MAX_FAILURES = 5
-LOCKOUT_SECONDS = 15 * 60
-FAILURE_WINDOW_SECONDS = 15 * 60
+DEVICE_COOKIE = "spotmp3_device"
+DEVICE_SECONDS = 365 * 24 * 3600
+TOKEN_BYTES = 32
 MIN_PASSWORD_LENGTH = 10
 MAX_PASSWORD_LENGTH = 256
 MAX_EMAIL_LENGTH = 254
@@ -28,6 +30,10 @@ SCRYPT_PARALLEL = 1
 SCRYPT_LENGTH = 32
 STARFIRE_TIMEOUT_SECONDS = 5
 STARFIRE_CACHE_SECONDS = 30
+SETUP_CODE_BYTES = 9
+SETUP_PATH = "/setup"
+
+log = logging.getLogger("spotmp3.auth")
 
 
 class AuthError(ValueError):
@@ -91,9 +97,13 @@ def check_new_password(password, confirm) -> str:
 class BuiltinAuth:
     mode = "builtin"
 
-    def __init__(self, database: Database):
+    def __init__(self, database: Database, limiter: FailureLimiter | None = None, device_limiter: FailureLimiter | None = None):
         self.database = database
+        self.limiter = limiter or FailureLimiter()
+        self.device_limiter = device_limiter or FailureLimiter(per_address=FAILURES_PER_DEVICE, before_strict=None)
         self._dummy_hash = hash_password(secrets.token_hex(8))
+        self._setup_code: str | None = None
+        self._setup_lock = threading.Lock()
 
     def needs_setup(self) -> bool:
         with self.database.connect() as connection:
@@ -102,7 +112,35 @@ class BuiltinAuth:
     def _user(self, row) -> User:
         return User(owner_key=f"builtin:{row['id']}", email=row["email"], is_admin=bool(row["is_admin"]), user_id=row["id"])
 
-    def create_first_admin(self, email, password, confirm) -> str:
+    def setup_code(self) -> str | None:
+        with self._setup_lock:
+            if self._setup_code is None and self.needs_setup():
+                self._setup_code = secrets.token_urlsafe(SETUP_CODE_BYTES)
+                log.warning("no account yet: open %s and enter the setup code %s", SETUP_PATH, self._setup_code)
+            return self._setup_code
+
+    def _spend_setup_code(self, used: str) -> None:
+        with self._setup_lock:
+            if self._setup_code == used:
+                self._setup_code = None
+
+    def _take_turn(self, limiter: FailureLimiter, key: str) -> None:
+        wait = limiter.take_turn(key)
+        if wait:
+            raise AuthError(f"too many attempts, try again in {wait // 60 + 1} min", status=429)
+
+    def _check_setup_code(self, code, expected: str, client_address: str) -> None:
+        self._take_turn(self.limiter, client_address)
+        if not isinstance(code, str) or not hmac.compare_digest(code.strip().encode(), expected.encode()):
+            log.warning("wrong setup code from %s", client_address)
+            raise AuthError("that setup code is wrong; SpotMP3 writes it to its log when it starts", status=401)
+        self.limiter.succeeded(client_address)
+
+    def create_first_admin(self, code, email, password, confirm, client_address: str = "unknown") -> str:
+        expected = self.setup_code()
+        if expected is None:
+            raise AuthError("setup is already finished", status=403)
+        self._check_setup_code(code, expected, client_address)
         address = clean_email(email)
         secret = check_new_password(password, confirm)
         with self.database.connect() as connection:
@@ -110,50 +148,66 @@ class BuiltinAuth:
                 raise AuthError("setup is already finished", status=403)
             cursor = connection.execute("INSERT INTO users (email, password_hash, is_admin, created_at) VALUES (?, ?, 1, ?)",
                                         (address, hash_password(secret), now()))
-            return self._start_session(connection, cursor.lastrowid)
+            token = self._start_session(connection, cursor.lastrowid)
+        self._spend_setup_code(expected)
+        return token
 
     def _start_session(self, connection, user_id: int) -> str:
-        token = secrets.token_urlsafe(32)
+        token = secrets.token_urlsafe(TOKEN_BYTES)
         connection.execute("INSERT INTO sessions (token_hash, user_id, expires_at) VALUES (?, ?, ?)", (_token_hash(token), user_id, now() + SESSION_SECONDS))
         return token
 
-    def _locked_for(self, connection, key: str) -> float:
-        row = connection.execute("SELECT locked_until FROM sign_in_failures WHERE key = ?", (key,)).fetchone()
-        return max(0.0, row["locked_until"] - now()) if row else 0.0
+    def _known_device(self, email: str, device_token) -> str | None:
+        if not isinstance(device_token, str) or not device_token:
+            return None
+        device_hash = _token_hash(device_token)
+        with self.database.connect() as connection:
+            row = connection.execute(
+                "SELECT 1 FROM sign_in_devices JOIN users ON users.id = sign_in_devices.user_id "
+                "WHERE sign_in_devices.token_hash = ? AND users.email = ? AND sign_in_devices.created_at > ?",
+                (device_hash, email, now() - DEVICE_SECONDS),
+            ).fetchone()
+        return device_hash if row else None
 
-    def _record_failure(self, connection, key: str) -> None:
-        current = now()
-        connection.execute("DELETE FROM sign_in_failures WHERE first_failure_at < ? AND locked_until < ?",
-                           (current - FAILURE_WINDOW_SECONDS, current))
-        row = connection.execute("SELECT failures, first_failure_at FROM sign_in_failures WHERE key = ?", (key,)).fetchone()
-        if row is None or current - row["first_failure_at"] > FAILURE_WINDOW_SECONDS:
-            connection.execute("INSERT OR REPLACE INTO sign_in_failures (key, failures, first_failure_at, locked_until) VALUES (?, 1, ?, 0)", (key, current))
-            return
-        failures = row["failures"] + 1
-        locked_until = current + LOCKOUT_SECONDS if failures >= MAX_FAILURES else 0
-        connection.execute("UPDATE sign_in_failures SET failures = ?, locked_until = ? WHERE key = ?", (failures, locked_until, key))
+    def _sign_in_bucket(self, email: str, client_address: str, device_token) -> tuple[FailureLimiter, str]:
+        device_hash = self._known_device(email, device_token)
+        if device_hash is not None:
+            return self.device_limiter, device_hash
+        return self.limiter, client_address
 
-    def sign_in(self, email, password, client_address: str) -> str:
+    def sign_in(self, email, password, client_address: str, device_token=None) -> str:
         if not isinstance(email, str) or not isinstance(password, str) or len(email) > MAX_EMAIL_LENGTH or len(password) > MAX_PASSWORD_LENGTH:
             raise AuthError("email or password is too long", status=400)
         address = email.strip().lower()
-        key = f"{client_address}|{address}"
+        limiter, key = self._sign_in_bucket(address, client_address, device_token)
+        self._take_turn(limiter, key)
         with self.database.connect() as connection:
-            wait = self._locked_for(connection, key)
-            if wait > 0:
-                raise AuthError(f"too many attempts, try again in {int(wait // 60) + 1} min", status=429)
             row = connection.execute("SELECT * FROM users WHERE email = ?", (address,)).fetchone()
             accepted = password_matches(password, row["password_hash"] if row else self._dummy_hash) and row is not None
-            if not accepted:
-                self._record_failure(connection, key)
-                token = None
-            else:
-                connection.execute("DELETE FROM sign_in_failures WHERE key = ?", (key,))
+            token = None
+            if accepted:
                 connection.execute("DELETE FROM sessions WHERE expires_at < ?", (now(),))
                 token = self._start_session(connection, row["id"])
         if token is None:
             raise AuthError("wrong email or password", status=401)
+        limiter.succeeded(key)
         return token
+
+    def device_token_for_session(self, session_token: str, known_device_token=None) -> str | None:
+        with self.database.connect() as connection:
+            session = connection.execute("SELECT user_id FROM sessions WHERE token_hash = ?", (_token_hash(session_token),)).fetchone()
+            if session is None:
+                return None
+            oldest = now() - DEVICE_SECONDS
+            if isinstance(known_device_token, str) and known_device_token and connection.execute(
+                    "SELECT 1 FROM sign_in_devices WHERE token_hash = ? AND user_id = ? AND created_at > ?",
+                    (_token_hash(known_device_token), session["user_id"], oldest)).fetchone():
+                return None
+            connection.execute("DELETE FROM sign_in_devices WHERE created_at <= ?", (oldest,))
+            device_token = secrets.token_urlsafe(TOKEN_BYTES)
+            connection.execute("INSERT INTO sign_in_devices (token_hash, user_id, created_at) VALUES (?, ?, ?)",
+                               (_token_hash(device_token), session["user_id"], now()))
+        return device_token
 
     def sign_out(self, token: str | None) -> None:
         if not token:

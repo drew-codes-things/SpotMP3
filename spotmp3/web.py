@@ -1,15 +1,18 @@
+import ipaddress
 import logging
+import socket
 import time
-from functools import wraps
+from functools import lru_cache, wraps
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from flask import Flask, Response, g, jsonify, redirect, request, send_file, send_from_directory
 
 from .audio import DEFAULT_QUALITY, UNSAFE_FILE_CHARACTERS, quality_choices
-from .auth import SESSION_COOKIE, SESSION_SECONDS, AuthError, BuiltinAuth
+from .auth import DEVICE_COOKIE, DEVICE_SECONDS, SESSION_COOKIE, SESSION_SECONDS, AuthError, BuiltinAuth
 from .config import Settings
 from .jobs import JobError, JobStore
-from .ratelimit import OneAtATime, RateLimiter
+from .ratelimit import OneAtATime, RateLimiter, visitor_address
 from .site_settings import SiteSettings, SiteSettingsError
 from .sources import SourceError, resolve_any
 from .tracks import Collection
@@ -19,10 +22,18 @@ from .zipstream import attachment_names, stream_zip
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 CLIENT_HEADER = "X-SpotMP3"
+FORWARDED_FOR_HEADER = "X-Forwarded-For"
+SIGN_IN_API_PATH = "/api/signin"
 MAX_REQUEST_BYTES = 2 * 1024 * 1024
 MAX_LINK_LENGTH = 2048
 MAX_ZIP_NAME_LENGTH = 100
 SAFE_METHODS = ("GET", "HEAD", "OPTIONS")
+LOOPBACK_HOST_NAMES = ("localhost", "127.0.0.1", "::1")
+LOOPBACK_DOMAIN_SUFFIX = ".localhost"
+LOCAL_NETWORK_SUFFIX = ".local"
+MISDIRECTED_REQUEST = 421
+WRONG_HOST_TEXT = ("SpotMP3 does not answer on that host name: with built-in accounts it answers on the names in "
+                   "ALLOWED_HOSTS, or with it empty on localhost, IP addresses and this machine's name")
 CONTENT_SECURITY_POLICY = "; ".join((
     "default-src 'self'",
     "script-src 'self'",
@@ -47,6 +58,37 @@ def _collection_json(collection: Collection) -> dict:
             "tracks": [track.to_json() for track in collection.tracks]}
 
 
+def _host_name(host: str) -> str:
+    try:
+        return (urlsplit(f"//{host or ''}").hostname or "").lower()
+    except ValueError:
+        return ""
+
+
+def _is_address(name: str) -> bool:
+    try:
+        ipaddress.ip_address(name)
+    except ValueError:
+        return False
+    return True
+
+
+@lru_cache(maxsize=1)
+def _own_host_names() -> frozenset:
+    short = socket.gethostname().lower()
+    names = {short, socket.getfqdn().lower(), short.split(".")[0] + LOCAL_NETWORK_SUFFIX}
+    return frozenset(name for name in names if name and name != LOCAL_NETWORK_SUFFIX)
+
+
+def is_allowed_host(host: str, allowed_hosts: tuple[str, ...]) -> bool:
+    name = _host_name(host)
+    if allowed_hosts:
+        return name in allowed_hosts
+    if name in LOOPBACK_HOST_NAMES or name.endswith(LOOPBACK_DOMAIN_SUFFIX) or _is_address(name):
+        return True
+    return name in _own_host_names()
+
+
 def _body() -> dict:
     data = request.get_json(silent=True)
     if not isinstance(data, dict):
@@ -63,6 +105,7 @@ def create_app(settings: Settings, auth, jobs: JobStore, worker: Worker, youtube
     app.config["MAX_CONTENT_LENGTH"] = MAX_REQUEST_BYTES
     is_builtin = isinstance(auth, BuiltinAuth)
     signin_path = "/signin" if is_builtin else settings.starfire_signin_path
+    trusted_proxies = tuple(ipaddress.ip_network(entry, strict=False) for entry in settings.trusted_proxies)
 
     def current_user():
         if "user" not in g:
@@ -96,9 +139,30 @@ def create_app(settings: Settings, auth, jobs: JobStore, worker: Worker, youtube
             return admin_only(view)(*args, **kwargs)
         return wrapper
 
+    def cookie_is_secure() -> bool:
+        if settings.secure_cookies != "auto":
+            return settings.secure_cookies == "true"
+        return request.is_secure or _host_name(request.host) not in LOOPBACK_HOST_NAMES
+
     def set_session(response: Response, token: str) -> Response:
-        response.set_cookie(SESSION_COOKIE, token, max_age=SESSION_SECONDS, httponly=True, samesite="Lax", secure=settings.secure_cookies, path="/")
+        response.set_cookie(SESSION_COOKIE, token, max_age=SESSION_SECONDS, httponly=True, samesite="Lax", secure=cookie_is_secure(), path="/")
         return response
+
+    def remember_device(response: Response, token: str) -> Response:
+        device_token = auth.device_token_for_session(token, request.cookies.get(DEVICE_COOKIE))
+        if device_token is not None:
+            response.set_cookie(DEVICE_COOKIE, device_token, max_age=DEVICE_SECONDS, httponly=True, samesite="Lax",
+                                secure=cookie_is_secure(), path=SIGN_IN_API_PATH)
+        return response
+
+    def visitor() -> str:
+        return visitor_address(request.remote_addr or "unknown", request.headers.get(FORWARDED_FOR_HEADER), trusted_proxies)
+
+    @app.before_request
+    def refuse_foreign_host_names():
+        if is_builtin and not is_allowed_host(request.host, settings.allowed_hosts):
+            return _error(WRONG_HOST_TEXT, MISDIRECTED_REQUEST)
+        return None
 
     @app.before_request
     def require_client_header():
@@ -148,6 +212,7 @@ def create_app(settings: Settings, auth, jobs: JobStore, worker: Worker, youtube
     def setup_page():
         if not is_builtin or not auth.needs_setup():
             return redirect("/")
+        auth.setup_code()
         return page("setup.html")
 
     @app.get("/signin")
@@ -176,16 +241,16 @@ def create_app(settings: Settings, auth, jobs: JobStore, worker: Worker, youtube
         if not is_builtin:
             return _error("setup is only used with built-in accounts", 404)
         data = _body()
-        token = auth.create_first_admin(data.get("email"), data.get("password"), data.get("confirm"))
-        return set_session(jsonify({"ok": True}), token)
+        token = auth.create_first_admin(data.get("code"), data.get("email"), data.get("password"), data.get("confirm"), visitor())
+        return remember_device(set_session(jsonify({"ok": True}), token), token)
 
-    @app.post("/api/signin")
+    @app.post(SIGN_IN_API_PATH)
     def signin():
         if not is_builtin:
             return _error("sign in through the main sign-in page", 404)
         data = _body()
-        token = auth.sign_in(data.get("email"), data.get("password"), request.remote_addr or "unknown")
-        return set_session(jsonify({"ok": True}), token)
+        token = auth.sign_in(data.get("email"), data.get("password"), visitor(), request.cookies.get(DEVICE_COOKIE))
+        return remember_device(set_session(jsonify({"ok": True}), token), token)
 
     @app.post("/api/signout")
     def signout():
