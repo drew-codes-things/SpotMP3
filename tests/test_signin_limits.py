@@ -11,7 +11,7 @@ from spotmp3 import auth as auth_module
 from spotmp3 import cli
 from spotmp3.auth import AuthError, BuiltinAuth
 from spotmp3.config import ConfigError, load_settings
-from spotmp3.ratelimit import FailureLimiter, failure_bucket, visitor_address
+from spotmp3.ratelimit import FAILURES_BEFORE_STRICT, FailureLimiter, failure_bucket, visitor_address
 from spotmp3.site_settings import SiteSettings
 from spotmp3.web import create_app
 
@@ -113,17 +113,59 @@ def test_one_address_cannot_try_many_accounts_past_the_limit(limited):
     assert wrong_sign_in(limited, ATTACKER, FRIEND) == 429
 
 
-def test_many_failures_from_everywhere_leave_each_network_one_try(database, clock):
+def test_many_failures_from_everywhere_leave_each_address_one_try_and_each_network_three(database, clock):
     auth = BuiltinAuth(database, limiter=FailureLimiter(clock=clock, before_strict=4))
     auth.create_first_admin(auth.setup_code(), ADMIN, TEST_PASSWORD, TEST_PASSWORD, OWNER_ADDRESS)
     for host in range(1, 5):
         assert wrong_sign_in(auth, f"192.0.2.{host * 50}") == 401
     assert wrong_sign_in(auth, "198.51.100.1") == 401
-    assert wrong_sign_in(auth, "198.51.100.2") == 429
+    assert wrong_sign_in(auth, "198.51.100.1") == 429
+    assert wrong_sign_in(auth, "198.51.100.2") == 401
+    assert wrong_sign_in(auth, "198.51.100.3") == 401
+    assert wrong_sign_in(auth, "198.51.100.4") == 429
     assert wrong_sign_in(auth, "203.0.113.1") == 401
     clock.now += FIFTEEN_MINUTES + 1
     assert wrong_sign_in(auth, "198.51.100.1") == 401
     assert wrong_sign_in(auth, "198.51.100.1") == 401
+
+
+def test_once_strict_a_neighbour_s_wrong_password_leaves_the_owner_a_new_browser(database, clock):
+    auth = BuiltinAuth(database, limiter=FailureLimiter(clock=clock, before_strict=4))
+    auth.create_first_admin(auth.setup_code(), ADMIN, TEST_PASSWORD, TEST_PASSWORD, OWNER_ADDRESS)
+    for host in range(1, 5):
+        assert wrong_sign_in(auth, f"203.0.113.{host}") == 401
+    assert wrong_sign_in(auth, "192.0.2.1") == 401
+    assert auth.sign_in(ADMIN, TEST_PASSWORD, "192.0.2.99")
+    assert wrong_sign_in(auth, "2001:db8:bb:1::1") == 401
+    assert auth.sign_in(ADMIN, TEST_PASSWORD, "2001:db8:bb:ffff::9")
+
+
+def address_in_one_ipv6_56(index: int) -> str:
+    return str(ipaddress.ip_address(int(ipaddress.ip_address("2001:db8:5:100::")) + ((index % 256) << 64) + 1))
+
+
+@pytest.mark.parametrize("neighbour, owner", [
+    ("198.51.100.200", "198.51.100.7"),
+    ("2001:db8:9:1::1", "2001:db8:9:ffff::7"),
+])
+def test_a_neighbour_trying_whenever_allowed_for_two_hours_never_keeps_the_owner_out(clock, neighbour, owner):
+    limiter = FailureLimiter(clock=clock)
+    attempts = neighbour_checked = owner_checks = owner_refused = 0
+    for second in range(2 * 3600):
+        clock.now += 1
+        for _ in range(4):
+            limiter.take_turn(address_in_one_ipv6_56(attempts))
+            attempts += 1
+        if second < 60:
+            continue
+        if limiter.take_turn(neighbour) == 0:
+            neighbour_checked += 1
+        if second % 60 == 59:
+            owner_checks += 1
+            owner_refused += limiter.seconds_blocked(owner) > 0
+            assert len(limiter._everyone) >= FAILURES_BEFORE_STRICT
+    assert neighbour_checked == 8
+    assert (owner_checks, owner_refused) == (119, 0)
 
 
 def test_old_failures_are_forgotten_after_the_window(limited, clock):

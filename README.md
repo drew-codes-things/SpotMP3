@@ -191,8 +191,10 @@ pip install -U "yt-dlp[default]"
 - Plain HTML, CSS and JavaScript: no build step.
 - Passwords hashed with scrypt, 5 failed sign-ins or setup codes lock that
   address (IPv6 by `/64`) for 15 minutes, whatever email they name; after
-  100 failures from everywhere in 15 minutes every network (IPv4 `/24`, IPv6
-  `/48`) gets one try. A browser that has signed in to an account before
+  100 failures from everywhere in 15 minutes each address gets one try and
+  each network (IPv4 `/24`, IPv6 `/48`) three, so one wrong password from a
+  neighbour on the same provider cannot keep your new browser out. A
+  browser that has signed in to an account before
   keeps a device cookie with its own 5 tries for that account, so a stranger
   on the same address cannot lock it out. Every change needs a custom header
   (CSRF) and pages ship a strict Content Security Policy.

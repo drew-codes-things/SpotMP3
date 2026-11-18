@@ -2,13 +2,14 @@ import ipaddress
 import threading
 import time
 from collections import OrderedDict, deque
-from typing import Callable
+from typing import Callable, NamedTuple
 
 WINDOW_SECONDS = 60.0
 FAILURES_PER_ADDRESS = 5
 FAILURES_PER_DEVICE = 5
 FAILURES_BEFORE_STRICT = 100
 STRICT_FAILURES_PER_ADDRESS = 1
+STRICT_FAILURES_PER_NETWORK = 3
 FAILURE_WINDOW_SECONDS = 15 * 60
 MAX_TRACKED_ADDRESSES = 10000
 IPV6_NETWORK_BITS = 64
@@ -87,6 +88,11 @@ def visitor_address(peer: str, forwarded_for: str | None, trusted_proxies) -> st
     return client
 
 
+class Failure(NamedTuple):
+    moment: float
+    source: str
+
+
 class FailureLimiter:
     def __init__(self, clock: Callable[[], float] = time.monotonic, per_address: int = FAILURES_PER_ADDRESS,
                  window: float = FAILURE_WINDOW_SECONDS, before_strict: int | None = FAILURES_BEFORE_STRICT,
@@ -105,57 +111,63 @@ class FailureLimiter:
         while self._everyone and self._everyone[0] <= cutoff:
             self._everyone.popleft()
         for key in list(self._failures):
-            moments = self._failures[key]
-            while moments and moments[0] <= cutoff:
-                moments.popleft()
-            if not moments:
+            failures = self._failures[key]
+            while failures and failures[0].moment <= cutoff:
+                failures.popleft()
+            if not failures:
                 del self._failures[key]
 
     def _is_strict(self) -> bool:
         return self.before_strict is not None and len(self._everyone) >= self.before_strict
 
-    def _buckets(self, key: str) -> tuple[str, ...]:
-        if self._is_strict():
-            return failure_bucket(key), failure_bucket(key, strict=True)
-        return (failure_bucket(key),)
+    def _address_limit(self) -> int:
+        return STRICT_FAILURES_PER_ADDRESS if self._is_strict() else self.per_address
 
-    def _seconds_left(self, moments, now: float) -> int:
-        limit = STRICT_FAILURES_PER_ADDRESS if self._is_strict() else self.per_address
-        if not moments or len(moments) < limit:
+    def _seconds_left(self, failures, now: float, limit: int) -> int:
+        if not failures or len(failures) < limit:
             return 0
-        return max(1, int(moments[len(moments) - limit] + self.window - now) + 1)
+        return max(1, int(failures[len(failures) - limit].moment + self.window - now) + 1)
 
-    def _wait_for(self, buckets, now: float) -> int:
-        return max(self._seconds_left(self._failures.get(bucket), now) for bucket in buckets)
+    def _wait_for(self, key: str, now: float) -> int:
+        address = failure_bucket(key)
+        limit = self._address_limit()
+        address_wait = self._seconds_left(self._failures.get(address), now, limit)
+        if not self._is_strict():
+            return address_wait
+        network = self._failures.get(failure_bucket(key, strict=True), ())
+        own_in_network = [failure for failure in network if failure.source == address]
+        return max(address_wait, self._seconds_left(own_in_network, now, limit),
+                   self._seconds_left(network, now, STRICT_FAILURES_PER_NETWORK))
 
     def _make_room(self, now: float) -> int:
         if len(self._failures) < self.max_tracked:
             return 0
-        unblocked = next((key for key, moments in self._failures.items() if not self._seconds_left(moments, now)), None)
+        limit = self._address_limit()
+        unblocked = next((key for key, failures in self._failures.items()
+                          if not self._seconds_left(failures, now, limit)), None)
         if unblocked is not None:
             del self._failures[unblocked]
             return 0
-        return min(self._seconds_left(moments, now) for moments in self._failures.values())
+        return min(self._seconds_left(failures, now, limit) for failures in self._failures.values())
 
     def seconds_blocked(self, key: str) -> int:
         with self._lock:
             now = self.clock()
             self._forget_old(now)
-            return self._wait_for(self._buckets(key), now)
+            return self._wait_for(key, now)
 
     def take_turn(self, key: str) -> int:
         with self._lock:
             now = self.clock()
             self._forget_old(now)
-            buckets = self._buckets(key)
-            counted = buckets[-1]
-            wait = self._wait_for(buckets, now)
+            counted = failure_bucket(key, strict=self._is_strict())
+            wait = self._wait_for(key, now)
             if not wait and counted not in self._failures:
                 wait = self._make_room(now)
             if wait:
                 return wait
-            moments = self._failures.setdefault(counted, deque())
-            moments.append(now)
+            failures = self._failures.setdefault(counted, deque())
+            failures.append(Failure(now, failure_bucket(key)))
             self._failures.move_to_end(counted)
             if self.before_strict is not None:
                 self._everyone.append(now)
@@ -165,6 +177,6 @@ class FailureLimiter:
         with self._lock:
             buckets = {failure_bucket(key), failure_bucket(key, strict=True)}
             cleared = [self._failures.pop(bucket) for bucket in buckets if bucket in self._failures]
-            latest = max((moments[-1] for moments in cleared if moments), default=None)
+            latest = max((failures[-1].moment for failures in cleared if failures), default=None)
             if latest is not None and self.before_strict is not None and latest in self._everyone:
                 self._everyone.remove(latest)
