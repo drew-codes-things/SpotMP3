@@ -99,7 +99,9 @@ the **Accounts** button. There is no sign-up page.
 With built-in accounts SpotMP3 answers only on `localhost`, `127.0.0.1`,
 `[::1]`, IP addresses and this machine's own name; any other `Host` gets
 `421`, so a web page cannot reach a copy on your machine by DNS rebinding.
-Behind a reverse proxy, put the public host name in `ALLOWED_HOSTS`. The sign-in cookie is `Secure` on every address except
+Behind a reverse proxy, put the public host name in `ALLOWED_HOSTS` and the
+proxy's address in `TRUSTED_PROXIES`, so wrong passwords are counted per
+visitor and not for the proxy as a whole. The sign-in cookie is `Secure` on every address except
 plain `http` on `localhost`, so on a plain `http` address on your home
 network either use https or set `SECURE_COOKIES=false` (see below).
 
@@ -112,6 +114,7 @@ network either use https or set `SECURE_COOKIES=false` (see below).
 | `PUBLIC_URL` | The address people use, e.g. `https://mp3.example.com`. Needed for Spotify connect. |
 | `SECURE_COOKIES` | `auto` (default): the session cookie is `Secure` everywhere except plain `http` to `localhost`, `127.0.0.1` or `[::1]`. On a plain `http` address on your home network the browser drops a `Secure` cookie, so use https there or set `false`. `true` forces it. `1`, `yes`, `on` mean `true` and `0`, `no`, `off` mean `false`; any other value means `false`, as before, with a warning in the log. |
 | `ALLOWED_HOSTS` | With built-in accounts, the only host names SpotMP3 answers on, comma separated (others get 421). Empty (default): `localhost`, `127.0.0.1`, `[::1]`, IP addresses and this machine's own name. |
+| `TRUSTED_PROXIES` | With built-in accounts, the reverse proxies whose `X-Forwarded-For` gives the visitor's address for the sign-in limit, comma separated addresses or private networks. Empty (default): the header is never read. |
 | `SPOTIFY_CLIENT_ID` | Optional, turns on Connect Spotify (see below). Easier to set on the site's Settings page. |
 | `RETENTION_HOURS` | How long finished files are kept. Default `24`. |
 | `STORAGE_LIMIT_MB` | Oldest files are cleaned up once finished files plus the database pass this. Default `2048`. |
@@ -186,9 +189,13 @@ pip install -U "yt-dlp[default]"
 - yt-dlp for YouTube, ffmpeg (libmp3lame) for encoding, Spotify's public
   embed pages for track lists.
 - Plain HTML, CSS and JavaScript: no build step.
-- Passwords hashed with scrypt, 5 failed sign-ins lock that address and
-  email for 15 minutes, every change needs a custom header (CSRF) and pages
-  ship a strict Content Security Policy.
+- Passwords hashed with scrypt, 5 failed sign-ins or setup codes lock that
+  address (IPv6 by `/64`) for 15 minutes, whatever email they name; after
+  100 failures from everywhere in 15 minutes every network (IPv4 `/24`, IPv6
+  `/48`) gets one try. A browser that has signed in to an account before
+  keeps a device cookie with its own 5 tries for that account, so a stranger
+  on the same address cannot lock it out. Every change needs a custom header
+  (CSRF) and pages ship a strict Content Security Policy.
 
 ## Tests
 

@@ -1,3 +1,4 @@
+import ipaddress
 import logging
 import os
 from dataclasses import dataclass
@@ -39,6 +40,32 @@ def _flag(name: str, default: bool) -> bool:
     return _text(name, "true" if default else "false").lower() in ("1", "true", "yes", "on")
 
 
+def _has_host_bits(entry: str) -> bool:
+    try:
+        ipaddress.ip_network(entry, strict=True)
+    except ValueError:
+        return True
+    return False
+
+
+def _trusted_proxies(auth_mode: str) -> tuple[str, ...]:
+    if auth_mode != "builtin":
+        return ()
+    entries = _list("TRUSTED_PROXIES")
+    for entry in entries:
+        try:
+            network = ipaddress.ip_network(entry, strict=False)
+        except ValueError as error:
+            raise ConfigError(f"TRUSTED_PROXIES has {entry!r}, which is not an address or network") from error
+        if _has_host_bits(entry):
+            raise ConfigError(f"TRUSTED_PROXIES has {entry!r}, which has host bits set; write {network} for the network "
+                              f"or {entry.split('/')[0]} for one address")
+        if network.num_addresses > 1 and not network.is_private:
+            raise ConfigError(f"TRUSTED_PROXIES has {entry!r}, which reaches public addresses; list the proxy's own "
+                              "address or a private network")
+    return entries
+
+
 def _secure_cookies() -> str:
     raw = _text("SECURE_COOKIES", "auto").lower()
     value = SECURE_COOKIE_SPELLINGS.get(raw, raw)
@@ -59,6 +86,7 @@ class Settings:
     starfire_signin_path: str = "/signin/"
     secure_cookies: str = "auto"
     allowed_hosts: tuple[str, ...] = ()
+    trusted_proxies: tuple[str, ...] = ()
     spotify_client_id: str = ""
     public_url: str = ""
     retention_hours: int = 24
@@ -110,6 +138,7 @@ def load_settings() -> Settings:
         starfire_signin_path=_text("STARFIRE_SIGNIN_PATH", "/signin/"),
         secure_cookies=_secure_cookies(),
         allowed_hosts=tuple(host.lower() for host in _list("ALLOWED_HOSTS")),
+        trusted_proxies=_trusted_proxies(auth_mode),
         spotify_client_id=_text("SPOTIFY_CLIENT_ID", ""),
         public_url=_text("PUBLIC_URL", ""),
         retention_hours=_number("RETENTION_HOURS", 24, 1),
