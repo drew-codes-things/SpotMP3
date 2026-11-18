@@ -15,6 +15,7 @@ MAX_TRACKED_ADDRESSES = 10000
 IPV6_NETWORK_BITS = 64
 STRICT_IPV4_NETWORK_BITS = 24
 STRICT_IPV6_NETWORK_BITS = 48
+STRICT_IPV6_ADDRESS_BITS = 56
 
 
 class RateLimiter:
@@ -53,13 +54,29 @@ class OneAtATime:
             self._busy.discard(key)
 
 
-def failure_bucket(address: str, strict: bool = False) -> str:
+def _plain_address(address: str) -> ipaddress.IPv4Address | ipaddress.IPv6Address | None:
     try:
         parsed = ipaddress.ip_address(address)
     except ValueError:
-        return address
+        return None
     if parsed.version == 6 and parsed.ipv4_mapped is not None:
-        parsed = parsed.ipv4_mapped
+        return parsed.ipv4_mapped
+    return parsed
+
+
+def failure_source(address: str) -> str:
+    parsed = _plain_address(address)
+    if parsed is None:
+        return address
+    if parsed.version == 4:
+        return str(parsed)
+    return str(ipaddress.IPv6Network((int(parsed), STRICT_IPV6_ADDRESS_BITS), strict=False))
+
+
+def failure_bucket(address: str, strict: bool = False) -> str:
+    parsed = _plain_address(address)
+    if parsed is None:
+        return address
     if parsed.version == 4:
         return str(ipaddress.IPv4Network((int(parsed), STRICT_IPV4_NETWORK_BITS), strict=False)) if strict else str(parsed)
     bits = STRICT_IPV6_NETWORK_BITS if strict else IPV6_NETWORK_BITS
@@ -135,7 +152,8 @@ class FailureLimiter:
         if not self._is_strict():
             return address_wait
         network = self._failures.get(failure_bucket(key, strict=True), ())
-        own_in_network = [failure for failure in network if failure.source == address]
+        source = failure_source(key)
+        own_in_network = [failure for failure in network if failure.source == source]
         return max(address_wait, self._seconds_left(own_in_network, now, limit),
                    self._seconds_left(network, now, STRICT_FAILURES_PER_NETWORK))
 
@@ -167,16 +185,29 @@ class FailureLimiter:
             if wait:
                 return wait
             failures = self._failures.setdefault(counted, deque())
-            failures.append(Failure(now, failure_bucket(key)))
+            failures.append(Failure(now, failure_source(key)))
             self._failures.move_to_end(counted)
             if self.before_strict is not None:
                 self._everyone.append(now)
             return 0
 
+    def _forget_failures_from(self, bucket: str, source: str) -> float | None:
+        failures = self._failures.get(bucket)
+        own = [failure for failure in failures or () if failure.source == source]
+        if not own:
+            return None
+        others = deque(failure for failure in failures if failure.source != source)
+        if others:
+            self._failures[bucket] = others
+        else:
+            del self._failures[bucket]
+        return own[-1].moment
+
     def succeeded(self, key: str) -> None:
         with self._lock:
+            source = failure_source(key)
             buckets = {failure_bucket(key), failure_bucket(key, strict=True)}
-            cleared = [self._failures.pop(bucket) for bucket in buckets if bucket in self._failures]
-            latest = max((failures[-1].moment for failures in cleared if failures), default=None)
+            forgotten = [self._forget_failures_from(bucket, source) for bucket in buckets]
+            latest = max((moment for moment in forgotten if moment is not None), default=None)
             if latest is not None and self.before_strict is not None and latest in self._everyone:
                 self._everyone.remove(latest)
