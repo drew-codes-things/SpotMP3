@@ -20,7 +20,9 @@ class DownloadSaver(
     fun arm(): Int? = sessions.arm(SystemClock.elapsedRealtime())
 
     fun handle(message: DownloadMessage) {
-        worker.execute { sessions.handle(message, SystemClock.elapsedRealtime()) }
+        val accepted = sessions.admit(message)
+        val toRun = if (accepted) message else DownloadMessage.Invalid(message.id)
+        worker.execute { sessions.handle(toRun, SystemClock.elapsedRealtime()) }
     }
 
     fun abortAll() {

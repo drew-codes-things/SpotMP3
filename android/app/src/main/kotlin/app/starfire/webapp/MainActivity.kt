@@ -41,12 +41,12 @@ class MainActivity : Activity() {
     private lateinit var container: FrameLayout
     private lateinit var startUrl: String
     private lateinit var urlPolicy: UrlPolicy
+    private lateinit var mainFrame: MainFrameTracker
     private lateinit var originRules: Set<String>
     private lateinit var downloadSaver: DownloadSaver
     private var pendingFileChooser: ValueCallback<Array<Uri>>? = null
     private val crashLimiter = CrashLimiter(MAX_RENDERER_CRASHES, RENDERER_CRASH_WINDOW_MILLIS)
     private var pageReplyProxy: JavaScriptReplyProxy? = null
-    private var pendingMainFrameUrl: String? = null
     private var offlineShown = false
     private var clearHistoryWhenFinished = false
     private var fullscreenView: View? = null
@@ -57,6 +57,7 @@ class MainActivity : Activity() {
         val store = AddressStore(this)
         startUrl = requireNotNull(store.url()) { "MainActivity started before an address was set" }
         urlPolicy = UrlPolicy(AddressValidator.allowedHosts(startUrl, store.extraHosts()))
+        mainFrame = MainFrameTracker(urlPolicy)
         originRules = DownloadPolicy.originRules(startUrl, store.extraHosts())
         downloadSaver = DownloadSaver(contentResolver, ::showSaveResult, ::replyToPage)
         publishChangeAddressShortcut()
@@ -104,6 +105,7 @@ class MainActivity : Activity() {
     }
 
     private fun replyToPage(text: String) {
+        if (!WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER)) return
         runOnUiThread { pageReplyProxy?.postMessage(text) }
     }
 
@@ -263,7 +265,7 @@ class MainActivity : Activity() {
                 }
                 return true
             }
-            if (urlPolicy.staysInApp(url)) return false
+            if (mainFrame.onNavigationRequest(url, request.isForMainFrame)) return false
             if (urlPolicy.opensExternally(url)) openExternally(url) else if (request.hasGesture()) toast(R.string.link_not_opened)
             return true
         }
@@ -275,13 +277,12 @@ class MainActivity : Activity() {
 
         override fun onReceivedSslError(view: WebView, handler: SslErrorHandler, error: SslError) {
             handler.cancel()
-            val failedMainFrame = MainFrameUrl.matchesMainFrame(error.url, view.url, pendingMainFrameUrl)
-            if (failedMainFrame && urlPolicy.staysInApp(error.url)) showOfflinePage(view, R.string.offline_tls_message)
+            if (mainFrame.isMainFrameFailure(error.url, view.url)) showOfflinePage(view, R.string.offline_tls_message)
         }
 
         override fun onPageStarted(view: WebView, url: String, favicon: Bitmap?) {
             downloadSaver.abortAll()
-            if (url.startsWith("https://")) pendingMainFrameUrl = url
+            mainFrame.onPageCommitted(url)
             if (!url.startsWith("https://") || !offlineShown) return
             offlineShown = false
             clearHistoryWhenFinished = true

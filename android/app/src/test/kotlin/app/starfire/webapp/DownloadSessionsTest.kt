@@ -244,4 +244,69 @@ class DownloadSessionsTest {
         assertTrue(ids.all { it != null })
         assertNull(sessions.arm(0))
     }
+
+    @Test
+    fun fiveChunksQueuedBeyondTheLastAckAreRefused() {
+        val id = armed()
+        sessions.handle(start(id, "x.zip", 100), 1)
+        val admitted = (1..6).map { sessions.admit(chunk(id, "A")) }
+        assertEquals(listOf(true, true, true, true, false, false), admitted)
+    }
+
+    @Test
+    fun processedChunksFreeTheWindow() {
+        val id = armed()
+        sessions.handle(start(id, "x.zip", 100), 1)
+        repeat(4) { sessions.admit(chunk(id, "A")) }
+        sessions.handle(chunk(id, "A"), 2)
+        assertTrue(sessions.admit(chunk(id, "A")))
+    }
+
+    @Test
+    fun floodedDownloadIsFailedAndDeleted() {
+        val id = armed()
+        sessions.handle(start(id, "x.zip", 100), 1)
+        repeat(5) { sessions.admit(chunk(id, "A")) }
+        sessions.handle(DownloadMessage.Invalid(id), 2)
+        assertTrue(store.files.single().discarded)
+        assertEquals(SaveResult.FAILED, events.finished.single().third)
+    }
+
+    @Test
+    fun messagesOtherThanChunksAreAlwaysAdmitted() {
+        val id = armed()
+        assertTrue(sessions.admit(start(id, "x.zip", 4)))
+        assertTrue(sessions.admit(DownloadMessage.End(id)))
+    }
+
+    @Test
+    fun armingDoesNotWaitForADiskWrite() {
+        val writing = java.util.concurrent.CountDownLatch(1)
+        val release = java.util.concurrent.CountDownLatch(1)
+        val blockingStore = object : DownloadStore {
+            override fun create(fileName: String, mimeType: String) = object : StoredDownload {
+                override fun write(bytes: ByteArray) {
+                    writing.countDown()
+                    release.await()
+                }
+                override fun publish() = Unit
+                override fun discard() = Unit
+            }
+        }
+        val blocked = DownloadSessions(blockingStore, events, maxBytes = 100)
+        val id = assertNotNull(blocked.arm(0))
+        blocked.handle(start(id, "x.zip", 8), 1)
+        val writer = Thread { blocked.handle(chunk(id, "AAAA"), 2) }
+        writer.start()
+        assertTrue(writing.await(5, java.util.concurrent.TimeUnit.SECONDS))
+        val armedWhileWriting = java.util.concurrent.atomic.AtomicReference<Int?>()
+        val caller = Thread { armedWhileWriting.set(blocked.arm(3)) }
+        caller.start()
+        caller.join(2_000)
+        val callerFinished = !caller.isAlive
+        release.countDown()
+        writer.join(5_000)
+        assertTrue(callerFinished)
+        assertNotNull(armedWhileWriting.get())
+    }
 }
