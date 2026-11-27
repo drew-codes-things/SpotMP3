@@ -14,6 +14,7 @@ import android.net.http.SslError
 import android.net.Uri
 import android.os.Bundle
 import android.os.Environment
+import android.os.SystemClock
 import android.text.TextUtils
 import android.view.View
 import android.view.ViewGroup
@@ -30,24 +31,30 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.FrameLayout
 import android.widget.Toast
+import androidx.webkit.WebViewCompat
+import androidx.webkit.WebViewFeature
 
 class MainActivity : Activity() {
     private lateinit var webView: WebView
     private lateinit var container: FrameLayout
     private lateinit var startUrl: String
     private lateinit var urlPolicy: UrlPolicy
+    private lateinit var originRules: Set<String>
+    private lateinit var downloadSaver: DownloadSaver
     private var pendingFileChooser: ValueCallback<Array<Uri>>? = null
+    private val crashLimiter = CrashLimiter(MAX_RENDERER_CRASHES, RENDERER_CRASH_WINDOW_MILLIS)
     private var offlineShown = false
     private var clearHistoryWhenFinished = false
     private var fullscreenView: View? = null
     private var fullscreenCallback: WebChromeClient.CustomViewCallback? = null
 
-    @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val store = AddressStore(this)
         startUrl = requireNotNull(store.url()) { "MainActivity started before an address was set" }
         urlPolicy = UrlPolicy(AddressValidator.allowedHosts(startUrl, store.extraHosts()))
+        originRules = DownloadPolicy.originRules(startUrl, store.extraHosts())
+        downloadSaver = DownloadSaver(contentResolver) { result -> runOnUiThread { toast(saveMessage(result)) } }
         publishChangeAddressShortcut()
         container = FrameLayout(this)
         setContentView(container)
@@ -57,9 +64,11 @@ class MainActivity : Activity() {
         if (!restored) webView.loadUrl(startUrl)
     }
 
+    @SuppressLint("SetJavaScriptEnabled")
     private fun attachNewWebView() {
         webView = WebView(this)
         container.addView(webView, 0, MATCH_PARENT_LAYOUT)
+        addDownloadListener()
         webView.settings.apply {
             javaScriptEnabled = true
             domStorageEnabled = true
@@ -76,11 +85,41 @@ class MainActivity : Activity() {
         }
     }
 
+    private fun addDownloadListener() {
+        if (!WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER)) return
+        WebViewCompat.addWebMessageListener(webView, DownloadScript.LISTENER_NAME, originRules) { _, message, sourceOrigin, isMainFrame, replyProxy ->
+            if (!isMainFrame || !DownloadPolicy.isAllowedOrigin(sourceOrigin.toString(), originRules)) return@addWebMessageListener
+            val parsed = message.data?.let(DownloadMessage::parse) ?: return@addWebMessageListener
+            downloadSaver.handle(parsed) { runOnUiThread { replyProxy.postMessage(STOP_MESSAGE) } }
+        }
+    }
+
+    private fun startBlobDownload(url: String, contentDisposition: String, mimeType: String) {
+        val blobOriginIsAllowed = urlPolicy.staysInApp(url.removePrefix(BLOB_PREFIX))
+        if (!blobOriginIsAllowed || !WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER)) {
+            toast(R.string.download_unsupported)
+            return
+        }
+        val fileName = DownloadPolicy.sanitizeFileName(URLUtil.guessFileName(url, contentDisposition, mimeType))
+        webView.evaluateJavascript(DownloadScript.forBlob(url, fileName), null)
+        toast(R.string.download_started)
+    }
+
+    private fun saveMessage(result: DownloadSaver.SaveResult) = when (result) {
+        DownloadSaver.SaveResult.SAVED -> R.string.download_saved
+        DownloadSaver.SaveResult.TOO_LARGE -> R.string.download_too_large
+        DownloadSaver.SaveResult.FAILED -> R.string.download_failed
+    }
+
     private fun replaceCrashedWebView() {
+        val crashedTooOften = crashLimiter.recordAndCheckExceeded(SystemClock.elapsedRealtime())
+        hideFullscreen()
+        pendingFileChooser?.onReceiveValue(null)
+        pendingFileChooser = null
         container.removeView(webView)
         webView.destroy()
         attachNewWebView()
-        webView.loadUrl(startUrl)
+        if (crashedTooOften) showOfflinePage(webView, R.string.offline_crash_message) else webView.loadUrl(startUrl)
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
@@ -100,6 +139,7 @@ class MainActivity : Activity() {
     }
 
     override fun onDestroy() {
+        downloadSaver.shutdown()
         container.removeAllViews()
         webView.destroy()
         super.onDestroy()
@@ -134,6 +174,7 @@ class MainActivity : Activity() {
     }
 
     private fun startDownload(url: String, userAgent: String, contentDisposition: String, mimeType: String) {
+        if (url.startsWith(BLOB_PREFIX)) return startBlobDownload(url, contentDisposition, mimeType)
         if (!URLUtil.isHttpsUrl(url)) {
             toast(R.string.download_unsupported)
             return
@@ -198,7 +239,7 @@ class MainActivity : Activity() {
                 return true
             }
             if (urlPolicy.staysInApp(url)) return false
-            if (urlPolicy.opensExternally(url)) openExternally(url)
+            if (urlPolicy.opensExternally(url)) openExternally(url) else if (request.hasGesture()) toast(R.string.link_not_opened)
             return true
         }
 
@@ -209,7 +250,8 @@ class MainActivity : Activity() {
 
         override fun onReceivedSslError(view: WebView, handler: SslErrorHandler, error: SslError) {
             handler.cancel()
-            if (urlPolicy.staysInApp(error.url)) showOfflinePage(view, R.string.offline_tls_message)
+            val failedMainFrame = MainFrameUrl.isSame(error.url, view.url)
+            if (failedMainFrame && urlPolicy.staysInApp(error.url)) showOfflinePage(view, R.string.offline_tls_message)
         }
 
         override fun onPageStarted(view: WebView, url: String, favicon: Bitmap?) {
@@ -226,7 +268,7 @@ class MainActivity : Activity() {
         }
 
         override fun onRenderProcessGone(view: WebView, detail: RenderProcessGoneDetail): Boolean {
-            replaceCrashedWebView()
+            if (view === webView) replaceCrashedWebView()
             return true
         }
     }
@@ -275,6 +317,10 @@ class MainActivity : Activity() {
 
     private companion object {
         const val FILE_CHOOSER_REQUEST = 1
+        const val MAX_RENDERER_CRASHES = 3
+        const val RENDERER_CRASH_WINDOW_MILLIS = 60_000L
+        const val BLOB_PREFIX = "blob:"
+        const val STOP_MESSAGE = "stop"
         const val CHANGE_ADDRESS_URL = "starfire-app://change-address"
         const val CHANGE_ADDRESS_SHORTCUT_ID = "change_address"
         const val BACKGROUND_COLOR = 0xFF19191C.toInt()

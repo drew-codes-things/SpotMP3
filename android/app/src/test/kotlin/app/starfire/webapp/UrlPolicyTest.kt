@@ -64,4 +64,26 @@ class UrlPolicyTest {
         assertFalse(policy.staysInApp("https://evil.test\\@drive.example.test/"))
         assertFalse(policy.staysInApp("https://drive.example.test\\@evil.test/"))
     }
+
+    @Test
+    fun malformedPercentSignsAndExtraHashesAreStillDecidedByHost() {
+        assertTrue(policy.staysInApp("https://drive.example.test/%zz|"))
+        assertTrue(policy.staysInApp("https://drive.example.test/search?q=50%"))
+        assertTrue(policy.staysInApp("https://drive.example.test/#a#b"))
+        assertFalse(policy.staysInApp("https://other.example.org/#a#b"))
+        assertTrue(policy.opensExternally("https://other.example.org/#a#b"))
+        assertTrue(policy.opensExternally("https://other.example.org/%zz"))
+    }
+
+    @Test
+    fun mailAndPhoneLinksWithIllegalCharactersStillOpenExternally() {
+        assertTrue(policy.opensExternally("mailto:a@b.test?subject=a|b"))
+        assertTrue(policy.opensExternally("tel:+44|1"))
+        assertFalse(policy.staysInApp("mailto:a@b.test?subject=a|b"))
+    }
+
+    @Test
+    fun validPercentEncodingIsLeftAlone() {
+        assertTrue(policy.staysInApp("https://drive.example.test/a%20b?x=%7C"))
+    }
 }

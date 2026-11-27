@@ -1,10 +1,15 @@
 <resources>
     <string name="download_started">Download started</string>
+    <string name="download_saved">Saved to Downloads</string>
+    <string name="download_too_large">This file is larger than 200 MB and was not saved</string>
+    <string name="download_failed">The download could not be saved</string>
     <string name="download_unsupported">This download cannot be saved from here</string>
     <string name="no_app_for_link">No app can open this link</string>
     <string name="no_file_picker">No file picker is available</string>
     <string name="offline_message">Cannot reach the server. Check your connection.</string>
     <string name="offline_tls_message">The secure connection to the server failed. The certificate may be invalid or expired.</string>
+    <string name="offline_crash_message">The page keeps stopping. Try again in a moment.</string>
+    <string name="link_not_opened">Couldn\'t open that link</string>
     <string name="offline_retry">Try again</string>
     <string name="offline_change_address">Change address</string>
     <string name="change_address">Change address</string>

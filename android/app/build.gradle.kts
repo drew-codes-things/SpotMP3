@@ -36,7 +36,7 @@ val keystorePassword = System.getenv("STARFIRE_KEYSTORE_PASSWORD")
 val keystoreAlias = System.getenv("STARFIRE_KEY_ALIAS") ?: "starfire-$appKey"
 val hasReleaseKey = keystoreFile.exists() && keystorePassword != null
 val allowDebugSigning = project.hasProperty("allowDebugSigning")
-val releaseArtifactTask = Regex("(assemble|package|bundle)\\w*Release")
+val releaseArtifactTask = Regex("^(assemble|package|bundle|sign|install)\\w*Release(?!Classes|Resources|Assets|JniLibs)\\w*$")
 
 android {
     namespace = "app.starfire.webapp"
@@ -46,8 +46,8 @@ android {
         applicationId = "app.starfire.$appKey"
         minSdk = 29
         targetSdk = 35
-        versionCode = 3
-        versionName = "1.1.1"
+        versionCode = 4
+        versionName = "1.1.2"
         buildConfigField("String", "EXAMPLE_URL", "\"$exampleUrl\"")
         resValue("string", "app_name", appLabel)
     }
@@ -83,7 +83,11 @@ android {
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"))
-            signingConfig = signingConfigs.getByName(if (hasReleaseKey) "starfire" else "debug")
+            signingConfig = when {
+                hasReleaseKey -> signingConfigs.getByName("starfire")
+                allowDebugSigning -> signingConfigs.getByName("debug")
+                else -> null
+            }
         }
     }
 
@@ -125,6 +129,7 @@ androidComponents {
 }
 
 dependencies {
+    implementation("androidx.webkit:webkit:1.14.0")
     testImplementation(kotlin("test"))
     testImplementation("junit:junit:4.13.2")
 }
