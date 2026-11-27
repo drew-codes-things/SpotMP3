@@ -2,6 +2,7 @@ package app.starfire.webapp
 
 import android.app.Activity
 import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
 import android.text.InputType
 import android.view.View
@@ -26,6 +27,7 @@ class SetupActivity : Activity() {
         super.onCreate(savedInstanceState)
         store = AddressStore(this)
         setContentView(buildLayout())
+        if (savedInstanceState != null) return
         addressField.setText(store.url().orEmpty())
         extraHostsField.setText(store.extraHosts().joinToString(", "))
     }
@@ -39,10 +41,10 @@ class SetupActivity : Activity() {
         column.addView(label(getString(R.string.setup_title, getString(R.string.app_name)), TITLE_SIZE_SP))
         column.addView(label(getString(R.string.setup_intro), BODY_SIZE_SP))
         column.addView(label(getString(R.string.setup_address_label), BODY_SIZE_SP))
-        addressField = field(BuildConfig.EXAMPLE_URL, InputType.TYPE_TEXT_VARIATION_URI)
+        addressField = field(ADDRESS_FIELD_ID, BuildConfig.EXAMPLE_URL)
         column.addView(addressField)
         column.addView(label(getString(R.string.setup_extra_hosts_label), BODY_SIZE_SP))
-        extraHostsField = field(getString(R.string.setup_extra_hosts_hint), InputType.TYPE_TEXT_VARIATION_URI)
+        extraHostsField = field(EXTRA_HOSTS_FIELD_ID, getString(R.string.setup_extra_hosts_hint))
         column.addView(extraHostsField)
         errorText = label("", BODY_SIZE_SP).apply { setTextColor(ERROR_COLOR) }
         column.addView(errorText)
@@ -69,9 +71,10 @@ class SetupActivity : Activity() {
         setPadding(0, dp(PADDING_DP / 2), 0, dp(PADDING_DP / 4))
     }
 
-    private fun field(hint: String, inputType: Int) = EditText(this).apply {
+    private fun field(fieldId: Int, hint: String) = EditText(this).apply {
+        id = fieldId
         this.hint = hint
-        this.inputType = inputType
+        inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI
         isSingleLine = true
         imeOptions = EditorInfo.IME_ACTION_DONE
         setTextColor(TEXT_COLOR)
@@ -81,10 +84,10 @@ class SetupActivity : Activity() {
 
     private fun submit() {
         val address = AddressValidator.validate(addressField.text.toString())
-        if (address is AddressResult.Invalid) return showError(getString(problemMessage(address.problem)))
+        if (address is AddressResult.Invalid) return showError(problemText(address.problem))
         val extras = AddressValidator.parseExtraHosts(extraHostsField.text.toString())
         if (extras is ExtraHostsResult.Invalid) {
-            return showError(getString(R.string.problem_extra_host, extras.entry, getString(problemMessage(extras.problem))))
+            return showError(getString(R.string.problem_extra_host, extras.entry, problemText(extras.problem)))
         }
         address as AddressResult.Valid
         extras as ExtraHostsResult.Valid
@@ -117,6 +120,11 @@ class SetupActivity : Activity() {
         errorText.text = message
     }
 
+    private fun problemText(problem: AddressProblem): String {
+        if (problem == AddressProblem.BAD_HOST) return getString(R.string.problem_bad_host, Uri.parse(BuildConfig.EXAMPLE_URL).host)
+        return getString(problemMessage(problem))
+    }
+
     private fun problemMessage(problem: AddressProblem) = when (problem) {
         AddressProblem.EMPTY -> R.string.problem_empty
         AddressProblem.NOT_A_URL -> R.string.problem_not_a_url
@@ -136,6 +144,8 @@ class SetupActivity : Activity() {
     private fun dp(value: Int) = (value * resources.displayMetrics.density).toInt()
 
     private companion object {
+        const val ADDRESS_FIELD_ID = 0x5F01
+        const val EXTRA_HOSTS_FIELD_ID = 0x5F02
         const val PADDING_DP = 20
         const val TITLE_SIZE_SP = 22f
         const val BODY_SIZE_SP = 15f

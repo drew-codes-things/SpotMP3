@@ -26,12 +26,13 @@
 
         <activity
             android:name=".SetupActivity"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden|navigation|density|fontScale|uiMode|layoutDirection|locale"
             android:exported="false"
             android:windowSoftInputMode="adjustResize" />
 
         <activity
             android:name=".MainActivity"
-            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden|uiMode"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden|navigation|density|fontScale|uiMode|layoutDirection|locale"
             android:exported="false"
             android:launchMode="singleTask"
             android:windowSoftInputMode="adjustResize" />

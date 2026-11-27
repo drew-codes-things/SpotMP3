@@ -8,7 +8,9 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.ShortcutInfo
 import android.content.pm.ShortcutManager
+import android.graphics.Bitmap
 import android.graphics.drawable.Icon
+import android.net.http.SslError
 import android.net.Uri
 import android.os.Bundle
 import android.os.Environment
@@ -16,6 +18,8 @@ import android.text.TextUtils
 import android.view.View
 import android.view.ViewGroup
 import android.webkit.CookieManager
+import android.webkit.RenderProcessGoneDetail
+import android.webkit.SslErrorHandler
 import android.webkit.URLUtil
 import android.webkit.ValueCallback
 import android.webkit.WebChromeClient
@@ -33,6 +37,8 @@ class MainActivity : Activity() {
     private lateinit var startUrl: String
     private lateinit var urlPolicy: UrlPolicy
     private var pendingFileChooser: ValueCallback<Array<Uri>>? = null
+    private var offlineShown = false
+    private var clearHistoryWhenFinished = false
     private var fullscreenView: View? = null
     private var fullscreenCallback: WebChromeClient.CustomViewCallback? = null
 
@@ -44,16 +50,21 @@ class MainActivity : Activity() {
         urlPolicy = UrlPolicy(AddressValidator.allowedHosts(startUrl, store.extraHosts()))
         publishChangeAddressShortcut()
         container = FrameLayout(this)
-        webView = WebView(this)
-        container.addView(webView, MATCH_PARENT_LAYOUT)
         setContentView(container)
-
         CookieManager.getInstance().setAcceptCookie(true)
+        attachNewWebView()
+        val restored = savedInstanceState != null && webView.restoreState(savedInstanceState) != null
+        if (!restored) webView.loadUrl(startUrl)
+    }
+
+    private fun attachNewWebView() {
+        webView = WebView(this)
+        container.addView(webView, 0, MATCH_PARENT_LAYOUT)
         webView.settings.apply {
             javaScriptEnabled = true
             domStorageEnabled = true
             allowFileAccess = false
-            allowContentAccess = true
+            allowContentAccess = false
             mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
             mediaPlaybackRequiresUserGesture = false
         }
@@ -63,8 +74,13 @@ class MainActivity : Activity() {
         webView.setDownloadListener { url, userAgent, contentDisposition, mimeType, _ ->
             startDownload(url, userAgent, contentDisposition, mimeType)
         }
+    }
 
-        if (savedInstanceState == null) webView.loadUrl(startUrl) else webView.restoreState(savedInstanceState)
+    private fun replaceCrashedWebView() {
+        container.removeView(webView)
+        webView.destroy()
+        attachNewWebView()
+        webView.loadUrl(startUrl)
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
@@ -93,6 +109,7 @@ class MainActivity : Activity() {
     override fun onBackPressed() {
         when {
             fullscreenView != null -> hideFullscreen()
+            offlineShown -> super.onBackPressed()
             webView.canGoBack() -> webView.goBack()
             else -> super.onBackPressed()
         }
@@ -104,8 +121,16 @@ class MainActivity : Activity() {
             super.onActivityResult(requestCode, resultCode, data)
             return
         }
-        pendingFileChooser?.onReceiveValue(WebChromeClient.FileChooserParams.parseResult(resultCode, data))
+        pendingFileChooser?.onReceiveValue(pickedFiles(resultCode, data))
         pendingFileChooser = null
+    }
+
+    private fun pickedFiles(resultCode: Int, data: Intent?): Array<Uri>? {
+        if (resultCode != RESULT_OK || data == null) return null
+        val clip = data.clipData
+        val clipUris = if (clip == null) emptyList() else (0 until clip.itemCount).mapNotNull { clip.getItemAt(it).uri?.toString() }
+        val picked = FileChooserResult.pickedUris(clipUris, data.data?.toString())
+        return if (picked.isEmpty()) null else picked.map(Uri::parse).toTypedArray()
     }
 
     private fun startDownload(url: String, userAgent: String, contentDisposition: String, mimeType: String) {
@@ -120,7 +145,9 @@ class MainActivity : Activity() {
             .setTitle(fileName)
             .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
             .setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, fileName)
-        CookieManager.getInstance().getCookie(url)?.let { request.addRequestHeader("Cookie", it) }
+        if (urlPolicy.staysInApp(url)) {
+            CookieManager.getInstance().getCookie(url)?.let { request.addRequestHeader("Cookie", it) }
+        }
         val manager = getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
         manager.enqueue(request)
         toast(R.string.download_started)
@@ -165,7 +192,9 @@ class MainActivity : Activity() {
         override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
             val url = request.url.toString()
             if (url == CHANGE_ADDRESS_URL) {
-                startActivity(Intent(this@MainActivity, SetupActivity::class.java))
+                if (offlineShown && request.isForMainFrame && request.hasGesture()) {
+                    startActivity(Intent(this@MainActivity, SetupActivity::class.java))
+                }
                 return true
             }
             if (urlPolicy.staysInApp(url)) return false
@@ -175,11 +204,30 @@ class MainActivity : Activity() {
 
         override fun onReceivedError(view: WebView, request: WebResourceRequest, error: WebResourceError) {
             if (!request.isForMainFrame) return
-            view.loadDataWithBaseURL(null, offlinePage(), "text/html", "utf-8", null)
+            showOfflinePage(view, R.string.offline_message)
+        }
+
+        override fun onReceivedSslError(view: WebView, handler: SslErrorHandler, error: SslError) {
+            handler.cancel()
+            if (urlPolicy.staysInApp(error.url)) showOfflinePage(view, R.string.offline_tls_message)
+        }
+
+        override fun onPageStarted(view: WebView, url: String, favicon: Bitmap?) {
+            if (!url.startsWith("https://") || !offlineShown) return
+            offlineShown = false
+            clearHistoryWhenFinished = true
         }
 
         override fun onPageFinished(view: WebView, url: String) {
             CookieManager.getInstance().flush()
+            if (!clearHistoryWhenFinished) return
+            clearHistoryWhenFinished = false
+            view.clearHistory()
+        }
+
+        override fun onRenderProcessGone(view: WebView, detail: RenderProcessGoneDetail): Boolean {
+            replaceCrashedWebView()
+            return true
         }
     }
 
@@ -198,7 +246,7 @@ class MainActivity : Activity() {
                 pendingFileChooser = null
                 filePathCallback.onReceiveValue(null)
                 toast(R.string.no_file_picker)
-                false
+                true
             }
         }
 
@@ -210,9 +258,13 @@ class MainActivity : Activity() {
         override fun onHideCustomView() = hideFullscreen()
     }
 
-    private fun offlinePage(): String {
+    private fun showOfflinePage(view: WebView, messageResource: Int) {
+        offlineShown = true
+        view.loadDataWithBaseURL(null, offlinePage(getString(messageResource)), "text/html", "utf-8", null)
+    }
+
+    private fun offlinePage(message: String): String {
         val retryUrl = TextUtils.htmlEncode(startUrl)
-        val message = getString(R.string.offline_message)
         val retry = getString(R.string.offline_retry)
         val change = getString(R.string.offline_change_address)
         return "<html><head><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"></head>" +

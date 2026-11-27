@@ -4,6 +4,7 @@
     <string name="no_app_for_link">No app can open this link</string>
     <string name="no_file_picker">No file picker is available</string>
     <string name="offline_message">Cannot reach the server. Check your connection.</string>
+    <string name="offline_tls_message">The secure connection to the server failed. The certificate may be invalid or expired.</string>
     <string name="offline_retry">Try again</string>
     <string name="offline_change_address">Change address</string>
     <string name="change_address">Change address</string>
@@ -20,7 +21,7 @@
     <string name="problem_not_https">The address must start with https://</string>
     <string name="problem_no_host">The address has no host name.</string>
     <string name="problem_has_credentials">Remove the user name and password from the address.</string>
-    <string name="problem_bad_host">Use a full host name such as photos.example.com.</string>
+    <string name="problem_bad_host">Use a full host name such as %1$s.</string>
     <string name="problem_extra_host">Extra host %1$s: %2$s</string>
     <string name="unreachable_unknown_host">That host name could not be found. Check the spelling and your connection.</string>
     <string name="unreachable_tls">The secure connection failed. The certificate may be invalid.</string>

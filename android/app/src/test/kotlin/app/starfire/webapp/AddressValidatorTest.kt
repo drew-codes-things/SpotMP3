@@ -23,7 +23,7 @@ class AddressValidatorTest {
 
     @Test
     fun portAndPathAreKeptAndQueryIsDropped() {
-        assertEquals("https://photos.example.com:8443/app/", valid("https://photos.example.com:8443/app?x=1#top").url)
+        assertEquals("https://photos.example.com:8443/app", valid("https://photos.example.com:8443/app?x=1#top").url)
     }
 
     @Test
@@ -96,5 +96,13 @@ class AddressValidatorTest {
     @Test
     fun allowListWithoutExtrasIsTheConfiguredHostOnly() {
         assertEquals(setOf("photos.example.com"), AddressValidator.allowedHosts("https://photos.example.com:8443/a/", emptyList()))
+    }
+
+    @Test
+    fun slashIsOnlyAddedToAnEmptyPath() {
+        assertEquals("https://photos.example.com/index.html", valid("https://photos.example.com/index.html").url)
+        assertEquals("https://photos.example.com/app/index.php", valid("https://photos.example.com/app/index.php?x=1").url)
+        assertEquals("https://photos.example.com/", valid("https://photos.example.com").url)
+        assertEquals("https://photos.example.com/app/", valid("https://photos.example.com/app/").url)
     }
 }

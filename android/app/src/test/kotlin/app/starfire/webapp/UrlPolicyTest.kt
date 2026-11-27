@@ -42,4 +42,26 @@ class UrlPolicyTest {
     fun emptyAllowListKeepsEverythingOutOfTheApp() {
         assertFalse(UrlPolicy(emptySet()).staysInApp("https://drive.example.test/"))
     }
+
+    @Test
+    fun charactersJavaUriRejectsAreStillDecidedByHost() {
+        val illegal = listOf("|", "{", "}", "^", "`", "\\", "[", "]")
+        for (character in illegal) {
+            val query = "https://drive.example.test/search?q=a${character}b"
+            val fragment = "https://drive.example.test/#/album/${character}id"
+            val path = "https://drive.example.test/files/${character}2024/"
+            val foreign = "https://other.example.org/article?ids=1${character}2"
+            assertTrue(policy.staysInApp(query), "query $character")
+            assertTrue(policy.staysInApp(fragment), "fragment $character")
+            assertTrue(policy.staysInApp(path), "path $character")
+            assertFalse(policy.staysInApp(foreign), "foreign $character")
+            assertTrue(policy.opensExternally(foreign), "external $character")
+        }
+    }
+
+    @Test
+    fun illegalCharactersInTheHostPartStillFailClosed() {
+        assertFalse(policy.staysInApp("https://evil.test\\@drive.example.test/"))
+        assertFalse(policy.staysInApp("https://drive.example.test\\@evil.test/"))
+    }
 }

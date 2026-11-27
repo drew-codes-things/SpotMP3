@@ -79,7 +79,7 @@ object AddressValidator {
 
     private fun normalised(uri: URI, host: String): String {
         val port = if (uri.port == NO_PORT) "" else ":${uri.port}"
-        val path = uri.rawPath.orEmpty().let { if (it.endsWith("/")) it else "$it/" }
+        val path = uri.rawPath.orEmpty().ifEmpty { "/" }
         return "$HTTPS$SCHEME_SEPARATOR$host$port$path"
     }
 }

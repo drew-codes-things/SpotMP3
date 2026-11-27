@@ -35,6 +35,8 @@ val keystorePassword = System.getenv("STARFIRE_KEYSTORE_PASSWORD")
     ?: File(homeDirectory, ".starfire-$appKey-release.pass").takeIf { it.exists() }?.readText()?.trim()
 val keystoreAlias = System.getenv("STARFIRE_KEY_ALIAS") ?: "starfire-$appKey"
 val hasReleaseKey = keystoreFile.exists() && keystorePassword != null
+val allowDebugSigning = project.hasProperty("allowDebugSigning")
+val releaseArtifactTask = Regex("(assemble|package|bundle)\\w*Release")
 
 android {
     namespace = "app.starfire.webapp"
@@ -44,8 +46,8 @@ android {
         applicationId = "app.starfire.$appKey"
         minSdk = 29
         targetSdk = 35
-        versionCode = 2
-        versionName = "1.1.0"
+        versionCode = 3
+        versionName = "1.1.1"
         buildConfigField("String", "EXAMPLE_URL", "\"$exampleUrl\"")
         resValue("string", "app_name", appLabel)
     }
@@ -101,6 +103,16 @@ android {
     packaging {
         resources.excludes += setOf("META-INF/versions/**", "META-INF/*.kotlin_module", "META-INF/LICENSE*", "META-INF/DEPENDENCIES")
     }
+}
+
+gradle.taskGraph.whenReady {
+    val buildsRelease = allTasks.any { releaseArtifactTask.matches(it.name) }
+    if (buildsRelease && !hasReleaseKey && !allowDebugSigning) {
+        throw GradleException(
+            "No release key found for $appKey. Provide ${keystoreFile.path} and its .pass file, set STARFIRE_KEYSTORE and STARFIRE_KEYSTORE_PASSWORD, or pass -PallowDebugSigning to sign with the debug key."
+        )
+    }
+    if (buildsRelease && !hasReleaseKey) logger.lifecycle("Signing the release build with the debug key because -PallowDebugSigning was given")
 }
 
 androidComponents {
