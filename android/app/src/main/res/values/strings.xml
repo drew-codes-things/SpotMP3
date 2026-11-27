@@ -1,0 +1,29 @@
+<resources>
+    <string name="download_started">Download started</string>
+    <string name="download_unsupported">This download cannot be saved from here</string>
+    <string name="no_app_for_link">No app can open this link</string>
+    <string name="no_file_picker">No file picker is available</string>
+    <string name="offline_message">Cannot reach the server. Check your connection.</string>
+    <string name="offline_retry">Try again</string>
+    <string name="offline_change_address">Change address</string>
+    <string name="change_address">Change address</string>
+    <string name="setup_title">Enter your %1$s address</string>
+    <string name="setup_intro">The https address of your own server. It is only stored on this phone.</string>
+    <string name="setup_address_label">Address</string>
+    <string name="setup_extra_hosts_label">Extra hosts that may open inside the app (optional)</string>
+    <string name="setup_extra_hosts_hint">files.example.com, cdn.example.com</string>
+    <string name="setup_save">Save and open</string>
+    <string name="setup_cancel">Cancel</string>
+    <string name="setup_checking">Checking the address...</string>
+    <string name="problem_empty">Enter an address.</string>
+    <string name="problem_not_a_url">That does not look like a web address.</string>
+    <string name="problem_not_https">The address must start with https://</string>
+    <string name="problem_no_host">The address has no host name.</string>
+    <string name="problem_has_credentials">Remove the user name and password from the address.</string>
+    <string name="problem_bad_host">Use a full host name such as photos.example.com.</string>
+    <string name="problem_extra_host">Extra host %1$s: %2$s</string>
+    <string name="unreachable_unknown_host">That host name could not be found. Check the spelling and your connection.</string>
+    <string name="unreachable_tls">The secure connection failed. The certificate may be invalid.</string>
+    <string name="unreachable_timeout">The server did not answer in time.</string>
+    <string name="unreachable_other">Could not connect to that address.</string>
+</resources>
