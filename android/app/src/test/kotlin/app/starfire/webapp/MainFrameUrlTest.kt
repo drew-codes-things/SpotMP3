@@ -22,4 +22,11 @@ class MainFrameUrlTest {
         assertFalse(MainFrameUrl.isSame("https://files.example.com/img.png", "https://photos.example.com/"))
         assertFalse(MainFrameUrl.isSame("https://photos.example.com/img.png", "https://photos.example.com/"))
     }
+
+    @Test
+    fun aTappedLinkIsTheMainFrameWhileItIsPending() {
+        assertTrue(MainFrameUrl.matchesMainFrame("https://a.example.com/next", "https://a.example.com/", "https://a.example.com/next"))
+        assertFalse(MainFrameUrl.matchesMainFrame("https://a.example.com/img.png", "https://a.example.com/", "https://a.example.com/next"))
+        assertTrue(MainFrameUrl.matchesMainFrame("https://a.example.com/", null, null))
+    }
 }

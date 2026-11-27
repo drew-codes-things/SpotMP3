@@ -249,9 +249,12 @@ assemblePrivateRelease`.
   your hosts. Android's download manager repeats request headers on redirects,
   so keep download redirects on your own hosts.
 - Files the page creates itself (blob: downloads) are sent to the app over a
-  message channel that only accepts your own origins and the main frame, and
-  are saved into Downloads through MediaStore with no storage permission. Each
-  file is limited to 200 MB.
+  message channel that only accepts your own origins and the main frame. Each
+  download gets an id from the app, is sent in acknowledged chunks, and is
+  saved into Downloads through MediaStore with no storage permission. Each
+  file is limited to 200 MB, a download that is incomplete, goes quiet for a
+  minute, or is interrupted by leaving the page is deleted, and the app says
+  it could not save it.
 - The app adds no JavaScript interface object. The only page-to-app channel is
   the message listener for blob: downloads described above. The app never
   accepts a bad TLS certificate (it shows the offline page instead) and keeps

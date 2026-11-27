@@ -6,42 +6,46 @@ import kotlin.test.assertNull
 
 class DownloadMessageTest {
     @Test
-    fun startCarriesSizeTypeAndName() {
-        assertEquals(DownloadMessage.Start(1234, "application/zip", "map.zip"), DownloadMessage.parse("S\n1234\napplication/zip\nmap.zip"))
+    fun startCarriesIdSizeTypeAndName() {
+        assertEquals(DownloadMessage.Start(7, 1234, "application/zip", "map.zip"), DownloadMessage.parse("S\n7\n1234\napplication/zip\nmap.zip"))
     }
 
     @Test
     fun fileNameMayContainNewlinesWithoutBreakingTheHeader() {
-        assertEquals(DownloadMessage.Start(5, "a/b", "x\ny"), DownloadMessage.parse("S\n5\na/b\nx\ny"))
+        assertEquals(DownloadMessage.Start(1, 5, "a/b", "x\ny"), DownloadMessage.parse("S\n1\n5\na/b\nx\ny"))
     }
 
     @Test
-    fun startNeedsANumericSize() {
-        assertNull(DownloadMessage.parse("S\nbig\napplication/zip\nmap.zip"))
-        assertNull(DownloadMessage.parse("S\n12"))
+    fun startWithABadSizeIsInvalidButKeepsItsId() {
+        assertEquals(DownloadMessage.Invalid(3), DownloadMessage.parse("S\n3\nbig\napplication/zip\nmap.zip"))
+        assertEquals(DownloadMessage.Invalid(3), DownloadMessage.parse("S\n3\n12"))
     }
 
     @Test
-    fun chunkCarriesBase64Only() {
-        assertEquals(DownloadMessage.Chunk("QUJD"), DownloadMessage.parse("C\nQUJD"))
-        assertNull(DownloadMessage.parse("C\nnot base64!"))
+    fun chunkCarriesIdAndBase64Only() {
+        assertEquals(DownloadMessage.Chunk(2, "QUJD"), DownloadMessage.parse("C\n2\nQUJD"))
+        assertEquals(DownloadMessage.Invalid(2), DownloadMessage.parse("C\n2\nnot base64!"))
     }
 
     @Test
-    fun oversizedChunksAreRefused() {
-        assertNull(DownloadMessage.parse("C\n" + "A".repeat(DownloadMessage.MAX_CHUNK_CHARS + 4)))
+    fun oversizedChunksAreInvalid() {
+        assertEquals(DownloadMessage.Invalid(2), DownloadMessage.parse("C\n2\n" + "A".repeat(DownloadMessage.MAX_CHUNK_CHARS + 4)))
     }
 
     @Test
-    fun endAndAbortAreSingleLetters() {
-        assertEquals(DownloadMessage.End, DownloadMessage.parse("E"))
-        assertEquals(DownloadMessage.Abort, DownloadMessage.parse("X"))
+    fun endAndAbortCarryTheId() {
+        assertEquals(DownloadMessage.End(4), DownloadMessage.parse("E\n4"))
+        assertEquals(DownloadMessage.Abort(4), DownloadMessage.parse("X\n4"))
     }
 
     @Test
-    fun unknownMessagesAreIgnored() {
+    fun messagesWithoutAnIdAreIgnored() {
         assertNull(DownloadMessage.parse(""))
-        assertNull(DownloadMessage.parse("Z\nhello"))
+        assertNull(DownloadMessage.parse("E"))
+        assertNull(DownloadMessage.parse("X"))
+        assertNull(DownloadMessage.parse("E\nabc"))
+        assertNull(DownloadMessage.parse("C\nQUJD"))
+        assertNull(DownloadMessage.parse("Z\n1\nhello"))
         assertNull(DownloadMessage.parse("Estuff"))
     }
 }

@@ -83,4 +83,27 @@ class DownloadPolicyTest {
         assertFalse(DownloadPolicy.isAllowedOrigin("null", rules))
         assertFalse(DownloadPolicy.isAllowedOrigin("https://photos.example.com.evil.test", rules))
     }
+
+    @Test
+    fun defaultHttpsPortIsDroppedFromRulesAndComparison() {
+        val rules = DownloadPolicy.originRules("https://photos.example.com:443/", emptyList())
+        assertEquals(setOf("https://photos.example.com"), rules)
+        assertTrue(DownloadPolicy.isAllowedOrigin("https://photos.example.com", rules))
+        assertTrue(DownloadPolicy.isAllowedOrigin("https://photos.example.com:443", rules))
+        assertFalse(DownloadPolicy.isAllowedOrigin("https://photos.example.com:8443", rules))
+    }
+
+    @Test
+    fun unparseableStartAddressGivesNoRulesInsteadOfCrashing() {
+        assertEquals(emptySet(), DownloadPolicy.originRules("https://exa mple.com/", emptyList()))
+        assertEquals(emptySet(), DownloadPolicy.originRules("not a url", emptyList()))
+    }
+
+    @Test
+    fun directionOverridesAndZeroWidthCharactersAreRemovedFromNames() {
+        assertEquals("photogpj.apk", DownloadPolicy.sanitizeFileName("photo\u202Egpj.apk"))
+        assertEquals("ab.zip", DownloadPolicy.sanitizeFileName("a\u200Bb\u200E.zip"))
+        assertEquals("ab.zip", DownloadPolicy.sanitizeFileName("a\u2066b\uFEFF.zip"))
+        assertEquals(DownloadPolicy.FALLBACK_FILE_NAME, DownloadPolicy.sanitizeFileName("\u202E\u200B"))
+    }
 }

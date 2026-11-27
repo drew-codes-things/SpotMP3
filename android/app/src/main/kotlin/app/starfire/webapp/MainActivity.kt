@@ -31,6 +31,8 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.FrameLayout
 import android.widget.Toast
+import androidx.webkit.JavaScriptReplyProxy
+import androidx.webkit.WebMessageCompat
 import androidx.webkit.WebViewCompat
 import androidx.webkit.WebViewFeature
 
@@ -43,6 +45,8 @@ class MainActivity : Activity() {
     private lateinit var downloadSaver: DownloadSaver
     private var pendingFileChooser: ValueCallback<Array<Uri>>? = null
     private val crashLimiter = CrashLimiter(MAX_RENDERER_CRASHES, RENDERER_CRASH_WINDOW_MILLIS)
+    private var pageReplyProxy: JavaScriptReplyProxy? = null
+    private var pendingMainFrameUrl: String? = null
     private var offlineShown = false
     private var clearHistoryWhenFinished = false
     private var fullscreenView: View? = null
@@ -54,7 +58,7 @@ class MainActivity : Activity() {
         startUrl = requireNotNull(store.url()) { "MainActivity started before an address was set" }
         urlPolicy = UrlPolicy(AddressValidator.allowedHosts(startUrl, store.extraHosts()))
         originRules = DownloadPolicy.originRules(startUrl, store.extraHosts())
-        downloadSaver = DownloadSaver(contentResolver) { result -> runOnUiThread { toast(saveMessage(result)) } }
+        downloadSaver = DownloadSaver(contentResolver, ::showSaveResult, ::replyToPage)
         publishChangeAddressShortcut()
         container = FrameLayout(this)
         setContentView(container)
@@ -88,9 +92,28 @@ class MainActivity : Activity() {
     private fun addDownloadListener() {
         if (!WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER)) return
         WebViewCompat.addWebMessageListener(webView, DownloadScript.LISTENER_NAME, originRules) { _, message, sourceOrigin, isMainFrame, replyProxy ->
-            if (!isMainFrame || !DownloadPolicy.isAllowedOrigin(sourceOrigin.toString(), originRules)) return@addWebMessageListener
+            val fromAllowedMainFrame = isMainFrame && DownloadPolicy.isAllowedOrigin(sourceOrigin.toString(), originRules)
+            if (!fromAllowedMainFrame || message.type != WebMessageCompat.TYPE_STRING) return@addWebMessageListener
             val parsed = message.data?.let(DownloadMessage::parse) ?: return@addWebMessageListener
-            downloadSaver.handle(parsed) { runOnUiThread { replyProxy.postMessage(STOP_MESSAGE) } }
+            pageReplyProxy = replyProxy
+            downloadSaver.handle(parsed)
+        }
+        if (WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
+            WebViewCompat.addDocumentStartJavaScript(webView, DownloadScript.NAME_RECORDER, originRules)
+        }
+    }
+
+    private fun replyToPage(text: String) {
+        runOnUiThread { pageReplyProxy?.postMessage(text) }
+    }
+
+    private fun showSaveResult(fileName: String, result: SaveResult) {
+        runOnUiThread {
+            when (result) {
+                SaveResult.SAVED -> toastText(getString(R.string.download_saved, fileName))
+                SaveResult.TOO_LARGE -> toast(R.string.download_too_large)
+                SaveResult.FAILED -> toastText(getString(R.string.download_failed, fileName))
+            }
         }
     }
 
@@ -100,18 +123,18 @@ class MainActivity : Activity() {
             toast(R.string.download_unsupported)
             return
         }
+        val id = downloadSaver.arm()
+        if (id == null) {
+            toast(R.string.download_busy)
+            return
+        }
         val fileName = DownloadPolicy.sanitizeFileName(URLUtil.guessFileName(url, contentDisposition, mimeType))
-        webView.evaluateJavascript(DownloadScript.forBlob(url, fileName), null)
+        webView.evaluateJavascript(DownloadScript.forBlob(url, fileName, id), null)
         toast(R.string.download_started)
     }
 
-    private fun saveMessage(result: DownloadSaver.SaveResult) = when (result) {
-        DownloadSaver.SaveResult.SAVED -> R.string.download_saved
-        DownloadSaver.SaveResult.TOO_LARGE -> R.string.download_too_large
-        DownloadSaver.SaveResult.FAILED -> R.string.download_failed
-    }
-
     private fun replaceCrashedWebView() {
+        downloadSaver.abortAll()
         val crashedTooOften = crashLimiter.recordAndCheckExceeded(SystemClock.elapsedRealtime())
         hideFullscreen()
         pendingFileChooser?.onReceiveValue(null)
@@ -227,6 +250,8 @@ class MainActivity : Activity() {
         getSystemService(ShortcutManager::class.java).dynamicShortcuts = listOf(shortcut)
     }
 
+    private fun toastText(message: String) = Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
+
     private fun toast(message: Int) = Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
 
     private inner class AppWebViewClient : WebViewClient() {
@@ -250,11 +275,13 @@ class MainActivity : Activity() {
 
         override fun onReceivedSslError(view: WebView, handler: SslErrorHandler, error: SslError) {
             handler.cancel()
-            val failedMainFrame = MainFrameUrl.isSame(error.url, view.url)
+            val failedMainFrame = MainFrameUrl.matchesMainFrame(error.url, view.url, pendingMainFrameUrl)
             if (failedMainFrame && urlPolicy.staysInApp(error.url)) showOfflinePage(view, R.string.offline_tls_message)
         }
 
         override fun onPageStarted(view: WebView, url: String, favicon: Bitmap?) {
+            downloadSaver.abortAll()
+            if (url.startsWith("https://")) pendingMainFrameUrl = url
             if (!url.startsWith("https://") || !offlineShown) return
             offlineShown = false
             clearHistoryWhenFinished = true
